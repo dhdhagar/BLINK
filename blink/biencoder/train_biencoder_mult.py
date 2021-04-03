@@ -112,7 +112,7 @@ def evaluate(
 
         eval_accuracy += tmp_eval_accuracy
 
-        nb_eval_examples += context_input.size(0)
+        nb_eval_examples += context_inputs.size(0)
         nb_eval_steps += 1
 
     normalized_eval_accuracy = eval_accuracy / nb_eval_examples
