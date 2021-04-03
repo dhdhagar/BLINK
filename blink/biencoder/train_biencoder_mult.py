@@ -86,7 +86,7 @@ def evaluate(
         context_inputs, candidate_idxs, n_gold = batch
         
         with torch.no_grad():
-            mention_embedding = reranker.encode_context(context_input)
+            mention_embedding = reranker.encode_context(context_inputs)
             
             # context_inputs = torch.cat([context_input]*topk) # Shape: (batch*topk) x token_len
             candidate_inputs = np.array([], dtype=np.long) # Shape: (batch*topk) x token_len
@@ -303,7 +303,7 @@ def main(params):
         for step, batch in enumerate(iter_):
             batch = tuple(t.to(device) for t in batch)
             context_inputs, candidate_idxs, n_gold = batch
-            mention_embedding = reranker.encode_context(context_input)
+            mention_embedding = reranker.encode_context(context_inputs)
             
             # context_inputs = torch.cat([context_input]*topk) # Shape: (batch*topk) x token_len
             candidate_inputs = np.array([], dtype=np.long) # Shape: (batch*topk) x token_len
