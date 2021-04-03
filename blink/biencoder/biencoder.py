@@ -22,6 +22,7 @@ from pytorch_transformers.tokenization_bert import BertTokenizer
 from blink.common.ranker_base import BertEncoder, get_model_obj
 from blink.common.optimizer import get_bert_optimizer
 
+from IPython import embed
 
 def load_biencoder(params):
     # Init model
@@ -196,7 +197,9 @@ class BiEncoderRanker(torch.nn.Module):
         else:
             loss_fct = nn.BCEWithLogitsLoss(reduction="mean")
             # TODO: add parameters?
-            loss = loss_fct(scores, label_input)
+            if scores.size() != label_input.size():
+                scores = torch.reshape(scores, label_input.size())
+            loss = loss_fct(scores, label_input) 
         return loss, scores
 
 
