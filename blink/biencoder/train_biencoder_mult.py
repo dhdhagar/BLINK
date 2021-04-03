@@ -60,26 +60,27 @@ def evaluate(
     nb_eval_examples = 0
     nb_eval_steps = 0
 
-    # Compute dictionary embeddings at the beginning of every epoch
-    valid_dict_embeddings = reranker.encode_candidate(valid_dict_vecs.cuda())
-    # Build the dictionary index
-    d = valid_dict_embeddings.shape[1]
-    nembeds = valid_dict_embeddings.shape[0]
-    if nembeds < 10000:  # if the number of embeddings is small, don't approximate
-        valid_dict_index = faiss.IndexFlatIP(d)
-        valid_dict_index.add(np.array(valid_dict_embeddings))
-    else:
-        # number of quantized cells
-        nlist = int(math.floor(math.sqrt(nembeds)))
-        # number of the quantized cells to probe
-        nprobe = int(math.floor(math.sqrt(nlist)))
-        quantizer = faiss.IndexFlatIP(d)
-        train_dict_index = faiss.IndexIVFFlat(
-            quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
-        )
-        valid_dict_index.train(np.array(valid_dict_embeddings))
-        valid_dict_index.add(np.array(valid_dict_embeddings))
-        valid_dict_index.nprobe = nprobe
+    with torch.no_grad():
+        # Compute dictionary embeddings at the beginning of every epoch
+        valid_dict_embeddings = reranker.encode_candidate(valid_dict_vecs.cuda())
+        # Build the dictionary index
+        d = valid_dict_embeddings.shape[1]
+        nembeds = valid_dict_embeddings.shape[0]
+        if nembeds < 10000:  # if the number of embeddings is small, don't approximate
+            valid_dict_index = faiss.IndexFlatIP(d)
+            valid_dict_index.add(np.array(valid_dict_embeddings))
+        else:
+            # number of quantized cells
+            nlist = int(math.floor(math.sqrt(nembeds)))
+            # number of the quantized cells to probe
+            nprobe = int(math.floor(math.sqrt(nlist)))
+            quantizer = faiss.IndexFlatIP(d)
+            train_dict_index = faiss.IndexIVFFlat(
+                quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
+            )
+            valid_dict_index.train(np.array(valid_dict_embeddings))
+            valid_dict_index.add(np.array(valid_dict_embeddings))
+            valid_dict_index.nprobe = nprobe
 
     for step, batch in enumerate(iter_):
         batch = tuple(t.to(device) for t in batch)
