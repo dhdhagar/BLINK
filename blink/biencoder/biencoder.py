@@ -173,14 +173,17 @@ class BiEncoderRanker(torch.nn.Module):
         _, embedding_cands = self.model(
             None, None, None, token_idx_cands, segment_idx_cands, mask_cands
         )
+        if embedding_cands.size[0] != embedding_ctxt.shape[0]:
+            embedding_cands = torch.reshape(embedding_cands, (embedding_ctxt.shape[0],embedding_cands.shape[0]/embedding_ctxt.shape[0],embedding_cands.shape[1]))
+
         if random_negs:
             # train on random negatives
             return embedding_ctxt.mm(embedding_cands.t())
         else:
             # train on hard negatives
-            embedding_ctxt = embedding_ctxt.unsqueeze(1)  # batchsize x 1 x embed_size
-            embedding_cands = embedding_cands.unsqueeze(2)  # batchsize x embed_size x 2
-            scores = torch.bmm(embedding_ctxt, embedding_cands)  # batchsize x 1 x 1
+            embedding_ctxt = embedding_ctxt.unsqueeze(2)  # batchsize x 1 x embed_size
+            # embedding_cands = embedding_cands.unsqueeze(2)  # batchsize x embed_size x 1
+            scores = torch.bmm(embedding_cands, embedding_ctxt)  # batchsize x 1 x 1
             scores = torch.squeeze(scores)
             return scores
 
@@ -197,8 +200,6 @@ class BiEncoderRanker(torch.nn.Module):
         else:
             loss_fct = nn.BCEWithLogitsLoss(reduction="mean")
             # TODO: add parameters?
-            if scores.size() != label_input.size():
-                scores = torch.reshape(scores, label_input.size())
             loss = loss_fct(scores, label_input) 
         return loss, scores
 

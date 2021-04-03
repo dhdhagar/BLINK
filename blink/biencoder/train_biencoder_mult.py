@@ -83,12 +83,12 @@ def evaluate(
 
     for step, batch in enumerate(iter_):
         batch = tuple(t.to(device) for t in batch)
-        context_input, candidate_idxs, n_gold = batch
+        context_inputs, candidate_idxs, n_gold = batch
         
         with torch.no_grad():
             mention_embedding = reranker.encode_context(context_input)
             
-            context_inputs = torch.cat([context_input]*topk) # Shape: (batch*topk) x token_len
+            # context_inputs = torch.cat([context_input]*topk) # Shape: (batch*topk) x token_len
             candidate_inputs = np.array([], dtype=np.long) # Shape: (batch*topk) x token_len
             label_inputs = (candidate_idxs >= 0).type(torch.float32) # Shape: batch x topk
 
@@ -302,10 +302,10 @@ def main(params):
 
         for step, batch in enumerate(iter_):
             batch = tuple(t.to(device) for t in batch)
-            context_input, candidate_idxs, n_gold = batch
+            context_inputs, candidate_idxs, n_gold = batch
             mention_embedding = reranker.encode_context(context_input)
             
-            context_inputs = torch.cat([context_input]*topk) # Shape: (batch*topk) x token_len
+            # context_inputs = torch.cat([context_input]*topk) # Shape: (batch*topk) x token_len
             candidate_inputs = np.array([], dtype=np.long) # Shape: (batch*topk) x token_len
             label_inputs = (candidate_idxs >= 0).type(torch.float32) # Shape: batch x topk
 
