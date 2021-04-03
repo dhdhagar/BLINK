@@ -274,26 +274,27 @@ def main(params):
         tr_loss = 0
         results = None
 
-        # Compute dictionary embeddings at the beginning of every epoch
-        train_dict_embeddings = reranker.encode_candidate(train_dict_vecs.cuda())
-        # Build the dictionary index
-        d = train_dict_embeddings.shape[1]
-        nembeds = train_dict_embeddings.shape[0]
-        if nembeds < 10000:  # if the number of embeddings is small, don't approximate
-            train_dict_index = faiss.IndexFlatIP(d)
-            train_dict_index.add(np.array(train_dict_embeddings))
-        else:
-            # number of quantized cells
-            nlist = int(math.floor(math.sqrt(nembeds)))
-            # number of the quantized cells to probe
-            nprobe = int(math.floor(math.sqrt(nlist)))
-            quantizer = faiss.IndexFlatIP(d)
-            train_dict_index = faiss.IndexIVFFlat(
-                quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
-            )
-            train_dict_index.train(np.array(train_dict_embeddings))
-            train_dict_index.add(np.array(train_dict_embeddings))
-            train_dict_index.nprobe = nprobe
+        with torch.no_grad():
+            # Compute dictionary embeddings at the beginning of every epoch
+            train_dict_embeddings = reranker.encode_candidate(train_dict_vecs.cuda())
+            # Build the dictionary index
+            d = train_dict_embeddings.shape[1]
+            nembeds = train_dict_embeddings.shape[0]
+            if nembeds < 10000:  # if the number of embeddings is small, don't approximate
+                train_dict_index = faiss.IndexFlatIP(d)
+                train_dict_index.add(np.array(train_dict_embeddings))
+            else:
+                # number of quantized cells
+                nlist = int(math.floor(math.sqrt(nembeds)))
+                # number of the quantized cells to probe
+                nprobe = int(math.floor(math.sqrt(nlist)))
+                quantizer = faiss.IndexFlatIP(d)
+                train_dict_index = faiss.IndexIVFFlat(
+                    quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
+                )
+                train_dict_index.train(np.array(train_dict_embeddings))
+                train_dict_index.add(np.array(train_dict_embeddings))
+                train_dict_index.nprobe = nprobe
 
         if params["silent"]:
             iter_ = train_dataloader
