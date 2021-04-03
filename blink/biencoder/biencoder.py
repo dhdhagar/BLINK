@@ -184,7 +184,7 @@ class BiEncoderRanker(torch.nn.Module):
             embedding_ctxt = embedding_ctxt.unsqueeze(2)  # batchsize x 1 x embed_size
             # embedding_cands = embedding_cands.unsqueeze(2)  # batchsize x embed_size x 1
             scores = torch.bmm(embedding_cands, embedding_ctxt)  # batchsize x 1 x 1
-            scores = torch.squeeze(scores)
+            scores = torch.squeeze(scores, dim=2)
             return scores
 
     # label_input -- negatives provided
