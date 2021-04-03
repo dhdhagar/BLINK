@@ -153,7 +153,7 @@ def main(params):
     logger = utils.get_logger(params["output_path"])
 
     # TODO: Read from params
-    topk = 6
+    topk = 10
 
     # Init model
     reranker = BiEncoderRanker(params)
