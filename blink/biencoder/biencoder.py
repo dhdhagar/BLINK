@@ -173,7 +173,7 @@ class BiEncoderRanker(torch.nn.Module):
         _, embedding_cands = self.model(
             None, None, None, token_idx_cands, segment_idx_cands, mask_cands
         )
-        if embedding_cands.size[0] != embedding_ctxt.shape[0]:
+        if embedding_cands.shape[0] != embedding_ctxt.shape[0]:
             embedding_cands = torch.reshape(embedding_cands, (embedding_ctxt.shape[0],embedding_cands.shape[0]/embedding_ctxt.shape[0],embedding_cands.shape[1]))
 
         if random_negs:
