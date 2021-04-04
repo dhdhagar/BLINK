@@ -33,8 +33,8 @@ def load_biencoder(params):
 class BiEncoderModule(torch.nn.Module):
     def __init__(self, params):
         super(BiEncoderModule, self).__init__()
-        ctxt_bert = BertModel.from_pretrained(params["bert_model"])
-        cand_bert = BertModel.from_pretrained(params['bert_model'])
+        ctxt_bert = BertModel.from_pretrained(params.get("path_to_model")) # params["bert_model"])
+        cand_bert = BertModel.from_pretrained(params.get("path_to_model"))
         self.context_encoder = BertEncoder(
             ctxt_bert,
             params["out_dim"],
@@ -83,12 +83,15 @@ class BiEncoderRanker(torch.nn.Module):
         self.NULL_IDX = 0
         self.START_TOKEN = "[CLS]"
         self.END_TOKEN = "[SEP]"
-        self.tokenizer = BertTokenizer.from_pretrained(
-            params["bert_model"], do_lower_case=params["lowercase"]
-        )
         # init model
-        self.build_model()
         model_path = params.get("path_to_model", None)
+        self.tokenizer = BertTokenizer.from_pretrained(
+            os.path.join(params["bert_model"], 'vocab.txt'), do_lower_case=params["lowercase"]
+        )
+        # self.tokenizer = BertTokenizer.from_pretrained(
+        #     params["bert_model"], do_lower_case=params["lowercase"]
+        # )
+        self.build_model()
         if model_path is not None:
             self.load_model(model_path)
 
@@ -97,12 +100,23 @@ class BiEncoderRanker(torch.nn.Module):
         if self.data_parallel:
             self.model = torch.nn.DataParallel(self.model)
 
-    def load_model(self, fname, cpu=False):
+    def load_model(self, model_path, cpu=False):
+        filename = os.path.join(model_path, 'pytorch_model.bin')
         if cpu:
-            state_dict = torch.load(fname, map_location=lambda storage, location: "cpu")
+            state_dict = torch.load(filename, map_location=lambda storage,location: "cpu") # fname, map_location=lambda storage, location: "cpu")
         else:
-            state_dict = torch.load(fname)
-        self.model.load_state_dict(state_dict)
+            state_dict = torch.load(filename)
+        new_state_dict = OrderedDict()
+        
+        for k, v in state_dict.items():
+            if k.startswith('bert.'):
+                k = k.replace('bert.', '')
+                new_state_dict[k]=v
+            elif k.startswith('cls.'):
+                continue
+            else:
+                new_state_dict[k]=v
+        self.model.load_state_dict(new_state_dict) # self.model.load_state_dict(state_dict)
 
     def build_model(self):
         self.model = BiEncoderModule(self.params)
