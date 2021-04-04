@@ -272,6 +272,7 @@ def main(params):
 
     num_train_epochs = params["num_train_epochs"]
     for epoch_idx in trange(int(num_train_epochs), desc="Epoch"):
+        torch.cuda.empty_cache()
         tr_loss = 0
         results = None
 
