@@ -93,8 +93,8 @@ class BiEncoderRanker(torch.nn.Module):
         #     params["bert_model"], do_lower_case=params["lowercase"]
         # )
         self.build_model()
-        if model_path is not None:
-            self.load_model(model_path)
+        # if model_path is not None:
+        #     self.load_model(model_path)
 
         self.model = self.model.to(self.device)
         self.data_parallel = params.get("data_parallel")
