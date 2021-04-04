@@ -22,6 +22,7 @@ from pytorch_transformers.tokenization_bert import BertTokenizer
 from blink.common.ranker_base import BertEncoder, get_model_obj
 from blink.common.optimizer import get_bert_optimizer
 
+from collections import OrderedDict
 from IPython import embed
 
 def load_biencoder(params):
