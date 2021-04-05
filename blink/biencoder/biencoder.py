@@ -87,7 +87,7 @@ class BiEncoderRanker(torch.nn.Module):
         # init model
         model_path = params.get("path_to_model", None)
         self.tokenizer = BertTokenizer.from_pretrained(
-            os.path.join(model_path, 'vocab.txt'), do_lower_case=params["lowercase"]
+            os.path.join(model_path, 'vocab.txt'), do_lower_case=False # Has to be false for BioBERT params["lowercase"]
         )
         # self.tokenizer = BertTokenizer.from_pretrained(
         #     params["bert_model"], do_lower_case=params["lowercase"]
