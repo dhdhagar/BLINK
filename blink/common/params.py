@@ -240,6 +240,10 @@ class BlinkParser(argparse.ArgumentParser):
             "--shuffle", type=bool, default=False, 
             help="Whether to shuffle train data",
         )
+        parser.add_argument(
+            "--topk", type=int, default=8, 
+            help="Number of kNN (positive+negative) to fetch per mention query during training",
+        )
 
     def add_eval_args(self, args=None):
         """

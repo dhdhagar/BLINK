@@ -153,8 +153,7 @@ def main(params):
         os.makedirs(model_output_path)
     logger = utils.get_logger(params["output_path"])
 
-    # TODO: Read from params
-    topk = 10
+    topk = params["topk"]
 
     # Init model
     reranker = BiEncoderRanker(params)
