@@ -128,8 +128,6 @@ def process_mention_data(
     else:
         iter_ = tqdm(samples)
 
-    use_world = True
-
     for idx, sample in enumerate(iter_):
         context_tokens = get_context_representation(
             sample,
@@ -141,12 +139,12 @@ def process_mention_data(
             ent_end_token,
         )
 
-        labels, record_labels = [sample], []
+        labels, record_labels, record_cuis = [sample], [], []
         if multi_label_key is not None:
             labels = sample[multi_label_key]
         for l in labels:
             label = l[label_key]
-            label_idx = int(l["label_id"])
+            label_idx = l["label_umls_cuid"]
             if label_idx not in doc2arr:
                 doc2arr[label_idx] = len(entity_dictionary)
                 title = l.get(title_key, None)
@@ -156,18 +154,20 @@ def process_mention_data(
                 entity_dictionary.append({
                     # "doc_idx": label_idx,
                     # "title": title,
-                    # "cui": l["label_umls_cuid"],
+                    "cui": l["label_umls_cuid"],
                     # "description": label,
                     "tokens": label_representation["tokens"],
                     "ids": label_representation["ids"],
                 })
             record_labels.append(doc2arr[label_idx])
+            record_cuis.append(label_idx)
         
         record = {
-            "idx": idx,
+            "mention_id": sample["mention_id"],
             "context": context_tokens,
             "n_labels": len(record_labels),
-            "label_idxs": record_labels + [-1]*(topk - len(record_labels)) # topk-length array with the starting elements representing the ground truth, and -1 elsewhere
+            "label_idxs": record_labels + [-1]*(topk - len(record_labels)), # topk-length array with the starting elements representing the ground truth, and -1 elsewhere
+            "label_cuis": record_cuis
         }
 
 
