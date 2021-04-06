@@ -213,9 +213,7 @@ class BiEncoderRanker(torch.nn.Module):
             target = target.to(self.device)
             loss = F.cross_entropy(scores, target, reduction="mean")
         else:
-            loss_fct = nn.BCEWithLogitsLoss(reduction="mean") # , pos_weight=torch.tensor([scores.shape[1]-1]*scores.shape[1]).cuda()
-            # TODO: add parameters?
-            loss = loss_fct(scores, label_input) 
+            loss = torch.mean(torch.sum(-torch.log(torch.softmax(scores, dim=1)) * label_input, dim=1))
         return loss, scores
 
 
