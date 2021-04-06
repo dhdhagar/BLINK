@@ -353,7 +353,7 @@ def main(params):
             if (step + 1) % (params["eval_interval"] * grad_acc_steps) == 0:
                 logger.info("Evaluation on the development dataset")
                 evaluate(
-                    reranker, train_dataloader, train_dict_vecs, params, device=device, logger=logger, topk=topk
+                    reranker, valid_dataloader, valid_dict_vecs, params, device=device, logger=logger, topk=topk
                 )
                 model.train()
                 logger.info("\n")
@@ -366,7 +366,7 @@ def main(params):
 
         output_eval_file = os.path.join(epoch_output_folder_path, "eval_results.txt")
         results = evaluate(
-            reranker, train_dataloader, train_dict_vecs, params, device=device, logger=logger, topk=topk
+            reranker, valid_dataloader, valid_dict_vecs, params, device=device, logger=logger, topk=topk
         )
 
         ls = [best_score, results["normalized_accuracy"]]

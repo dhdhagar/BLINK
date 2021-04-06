@@ -213,7 +213,7 @@ class BiEncoderRanker(torch.nn.Module):
             target = target.to(self.device)
             loss = F.cross_entropy(scores, target, reduction="mean")
         else:
-            loss = torch.mean(torch.sum(-torch.log(torch.softmax(scores, dim=1)) * label_input - torch.log(1 - torch.softmax(scores, dim=1)) * (1-label_input), dim=1))
+            loss = torch.mean(torch.sum(-torch.log(torch.softmax(scores, dim=1) + 1e-8) * label_input - torch.log(1 - torch.softmax(scores, dim=1) + 1e-8) * (1 - label_input), dim=1))
             # loss = torch.mean(torch.sum(-torch.log(torch.softmax(scores, dim=1)) * label_input, dim=1))
         return loss, scores
 
