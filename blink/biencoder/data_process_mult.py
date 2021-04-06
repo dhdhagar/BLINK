@@ -82,7 +82,7 @@ def get_candidate_representation(
     cand_tokens = tokenizer.tokenize(candidate_desc)
     if candidate_title is not None:
         title_tokens = tokenizer.tokenize(candidate_title)
-        cand_tokens = title_tokens + [title_tag] + cand_tokens
+        cand_tokens = title_tokens + [title_tag] + cand_tokens[len(title_tokens):] # ASSUMPTION: title is the first part of the description; adding this to avoid duplication
 
     cand_tokens = cand_tokens[: max_seq_length - 2]
     cand_tokens = [cls_token] + cand_tokens + [sep_token]
