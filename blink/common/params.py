@@ -137,7 +137,7 @@ class BlinkParser(argparse.ArgumentParser):
         )
         parser.add_argument(
             "--lowercase",
-            action="store_false",
+            action="store_true",
             help="Whether to lower case the input text. True for uncased models, False for cased models.",
         )
         parser.add_argument("--context_key", default="context", type=str)

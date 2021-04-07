@@ -34,8 +34,8 @@ def load_biencoder(params):
 class BiEncoderModule(torch.nn.Module):
     def __init__(self, params):
         super(BiEncoderModule, self).__init__()
-        ctxt_bert = BertModel.from_pretrained(params.get("path_to_model")) # params["bert_model"])
-        cand_bert = BertModel.from_pretrained(params.get("path_to_model"))
+        ctxt_bert = BertModel.from_pretrained(params["bert_model"]) # Could be a path containing config.json and pytorch_model.bin; or could be an id shorthand for a model that is loaded in the library
+        cand_bert = BertModel.from_pretrained(params["bert_model"])
         self.context_encoder = BertEncoder(
             ctxt_bert,
             params["out_dim"],
@@ -80,44 +80,34 @@ class BiEncoderRanker(torch.nn.Module):
             "cuda" if torch.cuda.is_available() and not params["no_cuda"] else "cpu"
         )
         self.n_gpu = torch.cuda.device_count()
+        
         # init tokenizer
         self.NULL_IDX = 0
         self.START_TOKEN = "[CLS]"
         self.END_TOKEN = "[SEP]"
-        # init model
-        model_path = params.get("path_to_model", None)
+        vocab_path = os.path.join(params["bert_model"], 'vocab.txt')
+        if os.path.isfile(vocab_path):
+            print(f"Found tokenizer vocabulary at {vocab_path}")
         self.tokenizer = BertTokenizer.from_pretrained(
-            os.path.join(model_path, 'vocab.txt'), do_lower_case=False # Has to be false for BioBERT params["lowercase"]
+            vocab_path if os.path.isfile(vocab_path) else params["bert_model"], do_lower_case=params["lowercase"]
         )
-        # self.tokenizer = BertTokenizer.from_pretrained(
-        #     params["bert_model"], do_lower_case=params["lowercase"]
-        # )
+        
+        # init model
         self.build_model()
-        # if model_path is not None:
-        #     self.load_model(model_path)
-
+        model_path = params.get("path_to_model", None) # Path to pytorch_model.bin for the biencoder model (not the pretrained bert model)
+        if model_path is not None:
+            self.load_model(model_path)
         self.model = self.model.to(self.device)
         self.data_parallel = params.get("data_parallel")
         if self.data_parallel:
             self.model = torch.nn.DataParallel(self.model)
 
-    def load_model(self, model_path, cpu=False):
-        filename = os.path.join(model_path, 'pytorch_model.bin')
+    def load_model(self, fname, cpu=False):
         if cpu:
-            state_dict = torch.load(filename, map_location=lambda storage,location: "cpu") # fname, map_location=lambda storage, location: "cpu")
+            state_dict = torch.load(fname, map_location=lambda storage,location: "cpu")
         else:
-            state_dict = torch.load(filename)
-        new_state_dict = OrderedDict()
-        
-        for k, v in state_dict.items():
-            if k.startswith('bert.'):
-                k = k.replace('bert.', '')
-                new_state_dict[k]=v
-            elif k.startswith('cls.'):
-                continue
-            else:
-                new_state_dict[k]=v
-        self.model.load_state_dict(new_state_dict) # self.model.load_state_dict(state_dict)
+            state_dict = torch.load(fname)
+        self.model.load_state_dict(state_dict)
 
     def build_model(self):
         self.model = BiEncoderModule(self.params)
@@ -189,17 +179,16 @@ class BiEncoderRanker(torch.nn.Module):
             None, None, None, token_idx_cands, segment_idx_cands, mask_cands
         )
         if embedding_cands.shape[0] != embedding_ctxt.shape[0]:
-            embedding_cands = embedding_cands.view(embedding_ctxt.shape[0],embedding_cands.shape[0]//embedding_ctxt.shape[0],embedding_cands.shape[1])
+            embedding_cands = embedding_cands.view(embedding_ctxt.shape[0], embedding_cands.shape[0]//embedding_ctxt.shape[0], embedding_cands.shape[1]) # batchsize x topk x embed_size
 
         if random_negs:
             # train on random negatives
             return embedding_ctxt.mm(embedding_cands.t())
         else:
             # train on hard negatives
-            embedding_ctxt = embedding_ctxt.unsqueeze(2)  # batchsize x 1 x embed_size
-            # embedding_cands = embedding_cands.unsqueeze(2)  # batchsize x embed_size x 1
-            scores = torch.bmm(embedding_cands, embedding_ctxt)  # batchsize x 1 x 1
-            scores = torch.squeeze(scores, dim=2)
+            embedding_ctxt = embedding_ctxt.unsqueeze(2) # batchsize x embed_size x 1
+            scores = torch.bmm(embedding_cands, embedding_ctxt) # batchsize x topk x 1
+            scores = torch.squeeze(scores, dim=2) # batchsize x topk
             return scores
 
     # label_input -- negatives provided
@@ -214,7 +203,6 @@ class BiEncoderRanker(torch.nn.Module):
             loss = F.cross_entropy(scores, target, reduction="mean")
         else:
             loss = torch.mean(torch.sum(-torch.log(torch.softmax(scores, dim=1) + 1e-8) * label_input - torch.log(1 - torch.softmax(scores, dim=1) + 1e-8) * (1 - label_input), dim=1))
-            # loss = torch.mean(torch.sum(-torch.log(torch.softmax(scores, dim=1)) * label_input, dim=1))
         return loss, scores
 
 
