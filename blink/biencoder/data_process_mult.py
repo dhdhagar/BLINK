@@ -5,13 +5,9 @@
 # LICENSE file in the root directory of this source tree.
 #
 
-import logging
 import torch
-from tqdm import tqdm, trange
-from torch.utils.data import DataLoader, TensorDataset
-
-from pytorch_transformers.tokenization_bert import BertTokenizer
-
+from tqdm import tqdm
+from torch.utils.data import TensorDataset
 from blink.biencoder.zeshel_utils import world_to_id
 from blink.common.params import ENT_START_TAG, ENT_END_TAG, ENT_TITLE_TAG
 

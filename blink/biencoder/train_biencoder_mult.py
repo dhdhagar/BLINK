@@ -5,33 +5,25 @@
 # LICENSE file in the root directory of this source tree.
 #
 import argparse
-# import io
-# import json
-# import logging
 import os
-# import pickle
 import random
-# import sys
 import time
-# from collections import OrderedDict
-# from multiprocessing.pool import ThreadPool
+
+import numpy as np
+import torch
+from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler)
+from pytorch_transformers.optimization import WarmupLinearSchedule
+import faiss
+from tqdm import tqdm, trange
 
 import blink.biencoder.data_process_mult as data
 import blink.candidate_ranking.utils as utils
-import faiss
-import numpy as np
-import torch
 from blink.biencoder.biencoder import BiEncoderRanker
-# from blink.biencoder.zeshel_utils import DOC_PATH, WORLDS, world_to_id
 from blink.common.optimizer import get_bert_optimizer
 from blink.common.params import BlinkParser
-# from pytorch_transformers.file_utils import PYTORCH_PRETRAINED_BERT_CACHE
-from pytorch_transformers.optimization import WarmupLinearSchedule
-# from pytorch_transformers.tokenization_bert import BertTokenizer
-from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler) # ,TensorDataset)
-from tqdm import tqdm, trange
 
 from IPython import embed
+
 
 logger = None
 
@@ -150,8 +142,6 @@ def main(params):
     reranker = BiEncoderRanker(params)
     tokenizer = reranker.tokenizer
     model = reranker.model
-
-    # utils.save_model(model, tokenizer, model_output_path)
 
     device = reranker.device
     n_gpu = reranker.n_gpu
