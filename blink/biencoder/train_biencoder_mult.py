@@ -297,7 +297,7 @@ def main(params):
     # TODO: reduce duplicated code here
     valid_samples = utils.read_dataset("valid", params["data_path"])
     # Filter samples without gold entities
-    valid_samples = filter(lambda sample: len(sample["labels"]) > 0, valid_samples)
+    valid_samples = list(filter(lambda sample: len(sample["labels"]) > 0, valid_samples))
     logger.info("Read %d valid samples." % len(valid_samples))
 
     _, valid_dictionary, valid_tensor_data = data.process_mention_data(
