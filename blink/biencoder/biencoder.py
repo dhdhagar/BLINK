@@ -129,12 +129,12 @@ class BiEncoderRanker(torch.nn.Module):
             fp16=self.params.get("fp16"),
         )
  
-    def encode_context(self, cands):
-        token_idx_cands, segment_idx_cands, mask_cands = to_bert_input(
-            cands, self.NULL_IDX
+    def encode_context(self, ctxt):
+        token_idx_ctxt, segment_idx_ctxt, mask_ctxt = to_bert_input(
+            ctxt, self.NULL_IDX
         )
         embedding_context, _ = self.model(
-            token_idx_cands, segment_idx_cands, mask_cands, None, None, None
+            token_idx_ctxt, segment_idx_ctxt, mask_ctxt, None, None, None
         )
         return embedding_context.cpu().detach()
 

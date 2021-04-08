@@ -4,7 +4,6 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 #
-import argparse
 import os
 import random
 import time
@@ -387,10 +386,6 @@ def main(params):
 if __name__ == "__main__":
     parser = BlinkParser(add_model_args=True)
     parser.add_training_args()
-
-    # args = argparse.Namespace(**params)
     args = parser.parse_args()
     print(args)
-
-    params = args.__dict__
-    main(params)
+    main(args.__dict__)

@@ -154,15 +154,16 @@ def process_mention_data(
                     "cui": l["label_umls_cuid"],
                     "tokens": label_representation["tokens"],
                     "ids": label_representation["ids"],
-                    # "doc_idx": label_idx,
-                    # "title": title,
-                    # "description": label,
+                    "doc_idx": label_idx,
+                    "title": title,
+                    "description": label,
                 })
             record_labels.append(doc2arr[label_idx])
             record_cuis.append(label_idx)
         
         record = {
             "mention_id": sample["mention_id"],
+            "mention_name": sample["mention"],
             "context": context_tokens,
             "n_labels": len(record_labels),
             "label_idxs": record_labels + [-1]*(knn - len(record_labels)), # knn-length array with the starting elements representing the ground truth, and -1 elsewhere

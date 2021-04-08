@@ -292,6 +292,15 @@ class BlinkParser(argparse.ArgumentParser):
             type=str,
             help="Path for candidate encoding",
         )
+        parser.add_argument(
+            "--knn", type=int, default=16,
+            help="Number of kNN mention candidates to fetch per mention query during inference",
+        )
+        parser.add_argument(
+            "--directed_graph",
+            action="store_true",
+            help="Whether to construct a directed graph for cluster-linking inference",
+        )
 
     def add_joint_train_args(self, args=None):
         """
