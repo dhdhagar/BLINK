@@ -102,7 +102,7 @@ def evaluate(
             context_inputs = context_inputs.cuda()
             label_inputs = label_inputs.cuda()
             
-            eval_loss, logits = reranker(context_inputs, candidate_inputs, label_inputs)
+            _, logits = reranker(context_inputs, candidate_inputs, label_inputs)
 
         logits = logits.detach().cpu().numpy()
         # # Using in-batch negatives, the label ids are diagonal
@@ -121,6 +121,81 @@ def evaluate(
     results["normalized_accuracy"] = normalized_eval_accuracy
     return results
 
+
+def evaluate_wo_gold(
+    reranker, eval_dataloader, valid_dict_vecs, params, device, logger, topk
+):
+    reranker.model.eval()
+
+    # To accomodate the approximate-nature of the knn procedure, retrieve more samples and then filter down
+    topk = max(16, 2*topk)
+
+    if params["silent"]:
+        iter_ = eval_dataloader
+    else:
+        iter_ = tqdm(eval_dataloader, desc="Evaluation")
+
+    results = {}
+
+    eval_accuracy = 0.0
+    nb_eval_examples = 0
+    nb_eval_steps = 0
+
+    with torch.no_grad():
+        # Compute dictionary embeddings at the beginning of every epoch
+        valid_dict_embeddings = reranker.encode_candidate(valid_dict_vecs.cuda())
+        # Build the dictionary index
+        d = valid_dict_embeddings.shape[1]
+        nembeds = valid_dict_embeddings.shape[0]
+        if nembeds < 10000:  # if the number of embeddings is small, don't approximate
+            valid_dict_index = faiss.IndexFlatIP(d)
+            valid_dict_index.add(np.array(valid_dict_embeddings))
+        else:
+            # number of quantized cells
+            nlist = int(math.floor(math.sqrt(nembeds)))
+            # number of the quantized cells to probe
+            nprobe = int(math.floor(math.sqrt(nlist)))
+            quantizer = faiss.IndexFlatIP(d)
+            train_dict_index = faiss.IndexIVFFlat(
+                quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
+            )
+            valid_dict_index.train(np.array(valid_dict_embeddings))
+            valid_dict_index.add(np.array(valid_dict_embeddings))
+            valid_dict_index.nprobe = nprobe
+
+    for step, batch in enumerate(iter_):
+        batch = tuple(t.to(device) for t in batch)
+        context_inputs, candidate_idxs, n_gold = batch
+        
+        with torch.no_grad():
+            mention_embeddings = reranker.encode_context(context_inputs)
+            candidate_inputs = np.array([], dtype=np.long) # Shape: (batch*topk) x token_len
+            label_inputs = torch.zeros((context_inputs.shape[0], topk), dtype=torch.float32) # Shape: batch x topk
+
+            for i, m_embed in enumerate(mention_embeddings):
+                _, knn_dict_idxs = valid_dict_index.search(np.expand_dims(m_embed, axis=0), topk)
+                knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()                
+                gold_idxs = candidate_idxs[i][:n_gold[i]].cpu()
+                candidate_inputs = np.concatenate((candidate_inputs, knn_dict_idxs))
+                label_inputs[i] = torch.tensor([1 if nn in gold_idxs else 0 for nn in knn_dict_idxs])
+            candidate_inputs = torch.tensor(list(map(lambda x: valid_dict_vecs[x].numpy(), candidate_inputs))).cuda()
+            context_inputs = context_inputs.cuda()
+            label_inputs = label_inputs.cuda()
+            
+            _, logits = reranker(context_inputs, candidate_inputs, label_inputs)
+
+        logits = logits.detach().cpu().numpy()
+        tmp_eval_accuracy = int(torch.sum(label_inputs[np.arange(label_inputs.shape[0]), np.argmax(logits, axis=1)] == 1))
+
+        eval_accuracy += tmp_eval_accuracy
+
+        nb_eval_examples += context_inputs.size(0)
+        nb_eval_steps += 1
+
+    normalized_eval_accuracy = eval_accuracy / nb_eval_examples
+    logger.info("Eval accuracy: %.5f" % normalized_eval_accuracy)
+    results["normalized_accuracy"] = normalized_eval_accuracy
+    return results
 
 def get_optimizer(model, params):
     return get_bert_optimizer(
@@ -220,6 +295,8 @@ def main(params):
     # Load eval data
     # TODO: reduce duplicated code here
     valid_samples = utils.read_dataset("valid", params["data_path"])
+    # Filter samples without gold entities
+    valid_samples = filter(lambda sample: len(sample["labels"]) > 0, valid_samples)
     logger.info("Read %d valid samples." % len(valid_samples))
 
     _, valid_dictionary, valid_tensor_data = data.process_mention_data(
@@ -242,11 +319,12 @@ def main(params):
         valid_tensor_data, sampler=valid_sampler, batch_size=eval_batch_size
     )
 
-    # TODO: Figure out if this is necessary
-    # # evaluate before training
-    # results = evaluate(
-    #     reranker, valid_dataloader, params, device=device, logger=logger,
-    # )
+    if params["only_evaluate"]:
+        evaluate_wo_gold(
+            reranker, valid_dataloader, valid_dict_vecs, params, device=device, logger=logger, topk=topk
+        )
+        exit()
+
 
     number_of_samples_per_dataset = {}
 

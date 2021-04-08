@@ -173,6 +173,9 @@ class BlinkParser(argparse.ArgumentParser):
             "--evaluate", action="store_true", help="Whether to run evaluation."
         )
         parser.add_argument(
+            "--only_evaluate", action="store_true", help="Whether to only run eval on the validation set."
+        )
+        parser.add_argument(
             "--output_eval_file",
             default=None,
             type=str,
