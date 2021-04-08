@@ -264,33 +264,34 @@ def main(params):
     if reranker.n_gpu > 0:
         torch.cuda.manual_seed_all(seed)
 
-    # Load train data
-    train_samples = utils.read_dataset("train", params["data_path"])
-    logger.info("Read %d train samples." % len(train_samples))
+    if not params["only_evaluate"]:
+        # Load train data
+        train_samples = utils.read_dataset("train", params["data_path"])
+        logger.info("Read %d train samples." % len(train_samples))
 
-    _, train_dictionary, train_tensor_data = data.process_mention_data(
-        train_samples,
-        tokenizer,
-        params["max_context_length"],
-        params["max_cand_length"],
-        context_key=params["context_key"],
-        silent=params["silent"],
-        logger=logger,
-        debug=params["debug"],
-        topk=topk
-    )
+        _, train_dictionary, train_tensor_data = data.process_mention_data(
+            train_samples,
+            tokenizer,
+            params["max_context_length"],
+            params["max_cand_length"],
+            context_key=params["context_key"],
+            silent=params["silent"],
+            logger=logger,
+            debug=params["debug"],
+            topk=topk
+        )
 
-    # Store the train dictionary vectors
-    train_dict_vecs = torch.tensor(list(map(lambda x: x['ids'], train_dictionary)), dtype=torch.long)
+        # Store the train dictionary vectors
+        train_dict_vecs = torch.tensor(list(map(lambda x: x['ids'], train_dictionary)), dtype=torch.long)
 
-    if params["shuffle"]:
-        train_sampler = RandomSampler(train_tensor_data)
-    else:
-        train_sampler = SequentialSampler(train_tensor_data)
+        if params["shuffle"]:
+            train_sampler = RandomSampler(train_tensor_data)
+        else:
+            train_sampler = SequentialSampler(train_tensor_data)
 
-    train_dataloader = DataLoader(
-        train_tensor_data, sampler=train_sampler, batch_size=train_batch_size
-    )
+        train_dataloader = DataLoader(
+            train_tensor_data, sampler=train_sampler, batch_size=train_batch_size
+        )
 
     # Load eval data
     # TODO: reduce duplicated code here
