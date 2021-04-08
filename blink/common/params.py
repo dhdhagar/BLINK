@@ -247,6 +247,10 @@ class BlinkParser(argparse.ArgumentParser):
             "--knn", type=int, default=8, 
             help="Number of kNN (positive+negative) candidates to fetch per mention query during training",
         )
+        parser.add_argument(
+            "--filter_unlabeled", action="store_true",
+            help="Whether to filter mentions that have no labeled entities from the train set",
+        )
 
     def add_eval_args(self, args=None):
         """

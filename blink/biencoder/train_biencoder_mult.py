@@ -173,6 +173,9 @@ def main(params):
     if not params["only_evaluate"]:
         # Load train data
         train_samples = utils.read_dataset("train", params["data_path"])
+        if params["filter_unlabeled"]:
+            # Filter samples without gold entities
+            train_samples = list(filter(lambda sample: len(sample["labels"]) > 0, train_samples))
         logger.info("Read %d train samples." % len(train_samples))
 
         _, train_dictionary, train_tensor_data = data.process_mention_data(
