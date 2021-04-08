@@ -294,8 +294,7 @@ def main(params):
         )
 
     # Load eval data
-    # TODO: reduce duplicated code here
-    valid_samples = utils.read_dataset("valid", params["data_path"])
+    valid_samples = utils.read_dataset("test", params["data_path"]) # TEMPORARILY CHANGED TO "test" from "valid"
     # Filter samples without gold entities
     valid_samples = list(filter(lambda sample: len(sample["labels"]) > 0, valid_samples))
     logger.info("Read %d valid samples." % len(valid_samples))
