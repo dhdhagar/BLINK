@@ -82,7 +82,10 @@ def get_candidate_representation(
     cand_tokens = tokenizer.tokenize(candidate_desc)
     if candidate_title is not None:
         title_tokens = tokenizer.tokenize(candidate_title)
-        cand_tokens = title_tokens + [title_tag] + cand_tokens[len(title_tokens):] # ASSUMPTION: title is the first part of the description; adding this to avoid duplication
+        if len(title_tokens) <= len(cand_tokens):
+            cand_tokens = title_tokens + [title_tag] + cand_tokens[(0 if title_tokens != cand_tokens[:len(title_tokens)] else len(title_tokens)):] # Filter title from description
+        else:
+            cand_tokens = title_tokens + [title_tag] + cand_tokens
 
     cand_tokens = cand_tokens[: max_seq_length - 2]
     cand_tokens = [cls_token] + cand_tokens + [sep_token]
@@ -114,7 +117,7 @@ def process_mention_data(
     title_token=ENT_TITLE_TAG,
     debug=False,
     logger=None,
-    topk=10,
+    knn=knn
 ):
     processed_samples = []
     entity_dictionary = []
@@ -152,12 +155,12 @@ def process_mention_data(
                     label, tokenizer, max_cand_length, title,
                 )
                 entity_dictionary.append({
-                    # "doc_idx": label_idx,
-                    # "title": title,
                     "cui": l["label_umls_cuid"],
-                    # "description": label,
                     "tokens": label_representation["tokens"],
                     "ids": label_representation["ids"],
+                    # "doc_idx": label_idx,
+                    # "title": title,
+                    # "description": label,
                 })
             record_labels.append(doc2arr[label_idx])
             record_cuis.append(label_idx)
@@ -166,31 +169,16 @@ def process_mention_data(
             "mention_id": sample["mention_id"],
             "context": context_tokens,
             "n_labels": len(record_labels),
-            "label_idxs": record_labels + [-1]*(topk - len(record_labels)), # topk-length array with the starting elements representing the ground truth, and -1 elsewhere
+            "label_idxs": record_labels + [-1]*(knn - len(record_labels)), # knn-length array with the starting elements representing the ground truth, and -1 elsewhere
             "label_cuis": record_cuis
         }
-
-
-        # label = sample[label_key if multi_label_key is None else multi_label_key]
-
-        # title = sample.get(title_key, None)
-        # label_tokens = get_candidate_representation(
-        #     label, tokenizer, max_cand_length, title,
-        # )
-        # label_idx = int(sample["label_id"])
-
-        # record = {
-        #     "context": context_tokens,
-        #     "label": label_tokens,
-        #     "label_idx": [label_idx],
-        # }
 
         if "world" in sample:
             src = sample["world"]
             src = world_to_id[src]
             record["src"] = [src]
         else:
-            record["src"] = [0]     # pseudo src
+            record["src"] = [0] # pseudo-src
 
         processed_samples.append(record)
 
@@ -212,24 +200,12 @@ def process_mention_data(
     context_vecs = torch.tensor(
         select_field(processed_samples, "context", "ids"), dtype=torch.long,
     )
-    # cand_vecs = torch.tensor(
-    #     select_field(processed_samples, "label", "ids"), dtype=torch.long,
-    # )
-    # src_vecs = torch.tensor(
-    #     select_field(processed_samples, "src"), dtype=torch.long,
-    # )
     label_idxs = torch.tensor(
         select_field(processed_samples, "label_idxs"), dtype=torch.long,
     )
     n_labels = torch.tensor(
         select_field(processed_samples, "n_labels"), dtype=torch.int,
     )
-    # data = {
-    #     "context_vecs": context_vecs,
-    #     "cand_vecs": cand_vecs,
-    #     "label_idx": label_idx,
-    # }
-
-    # data["src"] = src_vecs
     tensor_data = TensorDataset(context_vecs, label_idxs, n_labels)
+
     return processed_samples, entity_dictionary, tensor_data

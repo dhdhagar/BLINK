@@ -4,131 +4,45 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 #
-import os
 import argparse
-import pickle
-import torch
-import json
-import sys
-import io
+# import io
+# import json
+# import logging
+import os
+# import pickle
 import random
+# import sys
 import time
-import numpy as np
+# from collections import OrderedDict
+# from multiprocessing.pool import ThreadPool
 
-from multiprocessing.pool import ThreadPool
-
-from tqdm import tqdm, trange
-from collections import OrderedDict
-
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, TensorDataset
-
-from pytorch_transformers.file_utils import PYTORCH_PRETRAINED_BERT_CACHE
-from pytorch_transformers.optimization import WarmupLinearSchedule
-from pytorch_transformers.tokenization_bert import BertTokenizer
-
-from blink.biencoder.biencoder import BiEncoderRanker
-import logging
-
-import blink.candidate_ranking.utils as utils
 import blink.biencoder.data_process_mult as data
-from blink.biencoder.zeshel_utils import DOC_PATH, WORLDS, world_to_id
+import blink.candidate_ranking.utils as utils
+import faiss
+import numpy as np
+import torch
+from blink.biencoder.biencoder import BiEncoderRanker
+# from blink.biencoder.zeshel_utils import DOC_PATH, WORLDS, world_to_id
 from blink.common.optimizer import get_bert_optimizer
 from blink.common.params import BlinkParser
-
-import faiss
+# from pytorch_transformers.file_utils import PYTORCH_PRETRAINED_BERT_CACHE
+from pytorch_transformers.optimization import WarmupLinearSchedule
+# from pytorch_transformers.tokenization_bert import BertTokenizer
+from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler) # ,TensorDataset)
+from tqdm import tqdm, trange
 
 from IPython import embed
 
-
 logger = None
 
-# The evaluate function during training uses in-batch negatives:
-# for a batch of size B, the labels from the batch are used as label candidates
-# B is controlled by the parameter eval_batch_size
+# The evaluate function makes a prediction on a set of knn candidates for every mention
 def evaluate(
-    reranker, eval_dataloader, valid_dict_vecs, params, device, logger, topk
-):
-    reranker.model.eval()
-    if params["silent"]:
-        iter_ = eval_dataloader
-    else:
-        iter_ = tqdm(eval_dataloader, desc="Evaluation")
-
-    results = {}
-
-    eval_accuracy = 0.0
-    nb_eval_examples = 0
-    nb_eval_steps = 0
-
-    with torch.no_grad():
-        # Compute dictionary embeddings at the beginning of every epoch
-        valid_dict_embeddings = reranker.encode_candidate(valid_dict_vecs.cuda())
-        # Build the dictionary index
-        d = valid_dict_embeddings.shape[1]
-        nembeds = valid_dict_embeddings.shape[0]
-        if nembeds < 10000:  # if the number of embeddings is small, don't approximate
-            valid_dict_index = faiss.IndexFlatIP(d)
-            valid_dict_index.add(np.array(valid_dict_embeddings))
-        else:
-            # number of quantized cells
-            nlist = int(math.floor(math.sqrt(nembeds)))
-            # number of the quantized cells to probe
-            nprobe = int(math.floor(math.sqrt(nlist)))
-            quantizer = faiss.IndexFlatIP(d)
-            train_dict_index = faiss.IndexIVFFlat(
-                quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
-            )
-            valid_dict_index.train(np.array(valid_dict_embeddings))
-            valid_dict_index.add(np.array(valid_dict_embeddings))
-            valid_dict_index.nprobe = nprobe
-
-    for step, batch in enumerate(iter_):
-        batch = tuple(t.to(device) for t in batch)
-        context_inputs, candidate_idxs, n_gold = batch
-        
-        with torch.no_grad():
-            mention_embedding = reranker.encode_context(context_inputs)
-            
-            # context_inputs = torch.cat([context_input]*topk) # Shape: (batch*topk) x token_len
-            candidate_inputs = np.array([], dtype=np.long) # Shape: (batch*topk) x token_len
-            label_inputs = (candidate_idxs >= 0).type(torch.float32) # Shape: batch x topk
-
-            for i, m_embed in enumerate(mention_embedding):
-                _, knn_dict_idxs = valid_dict_index.search(np.expand_dims(m_embed, axis=0), topk)
-                knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()                
-                gold_idxs = candidate_idxs[i][:n_gold[i]].cpu()
-                candidate_inputs = np.concatenate((candidate_inputs, np.concatenate((gold_idxs, knn_dict_idxs[~np.isin(knn_dict_idxs, gold_idxs)]))[:topk]))
-            candidate_inputs = torch.tensor(list(map(lambda x: valid_dict_vecs[x].numpy(), candidate_inputs))).cuda()
-            context_inputs = context_inputs.cuda()
-            label_inputs = label_inputs.cuda()
-            
-            _, logits = reranker(context_inputs, candidate_inputs, label_inputs)
-
-        logits = logits.detach().cpu().numpy()
-        # # Using in-batch negatives, the label ids are diagonal
-        # label_ids = torch.LongTensor(
-        #         torch.arange(params["eval_batch_size"])
-        # ).numpy()
-        tmp_eval_accuracy = int(torch.sum(label_inputs[np.arange(label_inputs.shape[0]), np.argmax(logits, axis=1)] == 1))
-
-        eval_accuracy += tmp_eval_accuracy
-
-        nb_eval_examples += context_inputs.size(0)
-        nb_eval_steps += 1
-
-    normalized_eval_accuracy = eval_accuracy / nb_eval_examples
-    logger.info("Eval accuracy: %.5f" % normalized_eval_accuracy)
-    results["normalized_accuracy"] = normalized_eval_accuracy
-    return results
-
-
-def evaluate_wo_gold(
-    reranker, eval_dataloader, valid_dict_vecs, params, device, logger, topk
+    reranker, eval_dataloader, valid_dict_vecs, params, device, logger, knn
 ):
     reranker.model.eval()
 
     # To accomodate the approximate-nature of the knn procedure, retrieve more samples and then filter down
-    topk = max(16, 2*topk)
+    knn = max(16, 2*knn)
 
     if params["silent"]:
         iter_ = eval_dataloader
@@ -168,12 +82,14 @@ def evaluate_wo_gold(
         context_inputs, candidate_idxs, n_gold = batch
         
         with torch.no_grad():
-            mention_embeddings = reranker.encode_context(context_inputs)
-            candidate_inputs = np.array([], dtype=np.long) # Shape: (batch*topk) x token_len
-            label_inputs = torch.zeros((context_inputs.shape[0], topk), dtype=torch.float32) # Shape: batch x topk
+            mention_embeddings = reranker.encode_context(context_inputs) 
+            
+            # context_inputs: Shape: batch x token_len
+            candidate_inputs = np.array([], dtype=np.long) # Shape: (batch*knn) x token_len
+            label_inputs = torch.zeros((context_inputs.shape[0], knn), dtype=torch.float32) # Shape: batch x knn
 
             for i, m_embed in enumerate(mention_embeddings):
-                _, knn_dict_idxs = valid_dict_index.search(np.expand_dims(m_embed, axis=0), topk)
+                _, knn_dict_idxs = valid_dict_index.search(np.expand_dims(m_embed, axis=0), knn)
                 knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()                
                 gold_idxs = candidate_idxs[i][:n_gold[i]].cpu()
                 candidate_inputs = np.concatenate((candidate_inputs, knn_dict_idxs))
@@ -228,7 +144,7 @@ def main(params):
         os.makedirs(model_output_path)
     logger = utils.get_logger(params["output_path"])
 
-    topk = params["topk"]
+    knn = params["knn"]
 
     # Init model
     reranker = BiEncoderRanker(params)
@@ -278,7 +194,7 @@ def main(params):
             silent=params["silent"],
             logger=logger,
             debug=params["debug"],
-            topk=topk
+            knn=knn
         )
 
         # Store the train dictionary vectors
@@ -294,7 +210,7 @@ def main(params):
         )
 
     # Load eval data
-    valid_samples = utils.read_dataset("test", params["data_path"]) # TEMPORARILY CHANGED TO "test" from "valid"
+    valid_samples = utils.read_dataset("valid", params["data_path"])
     # Filter samples without gold entities
     valid_samples = list(filter(lambda sample: len(sample["labels"]) > 0, valid_samples))
     logger.info("Read %d valid samples." % len(valid_samples))
@@ -308,7 +224,7 @@ def main(params):
         silent=params["silent"],
         logger=logger,
         debug=params["debug"],
-        topk=topk
+        knn=knn
     )
 
     # Store the valid dictionary vectors
@@ -320,8 +236,8 @@ def main(params):
     )
 
     if params["only_evaluate"]:
-        evaluate_wo_gold(
-            reranker, valid_dataloader, valid_dict_vecs, params, device=device, logger=logger, topk=topk
+        evaluate(
+            reranker, valid_dataloader, valid_dict_vecs, params, device=device, logger=logger, knn=knn
         )
         exit()
 
@@ -385,15 +301,15 @@ def main(params):
             context_inputs, candidate_idxs, n_gold = batch
             mention_embedding = reranker.encode_context(context_inputs)
             
-            # context_inputs = torch.cat([context_input]*topk) # Shape: (batch*topk) x token_len
-            candidate_inputs = np.array([], dtype=np.long) # Shape: (batch*topk) x token_len
-            label_inputs = (candidate_idxs >= 0).type(torch.float32) # Shape: batch x topk
+            # context_inputs: Shape: batch x token_len
+            candidate_inputs = np.array([], dtype=np.long) # Shape: (batch*knn) x token_len
+            label_inputs = (candidate_idxs >= 0).type(torch.float32) # Shape: batch x knn
 
             for i, m_embed in enumerate(mention_embedding):
-                _, knn_dict_idxs = train_dict_index.search(np.expand_dims(m_embed, axis=0), topk)
+                _, knn_dict_idxs = train_dict_index.search(np.expand_dims(m_embed, axis=0), knn)
                 knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()                
                 gold_idxs = candidate_idxs[i][:n_gold[i]].cpu()
-                candidate_inputs = np.concatenate((candidate_inputs, np.concatenate((gold_idxs, knn_dict_idxs[~np.isin(knn_dict_idxs, gold_idxs)]))[:topk]))
+                candidate_inputs = np.concatenate((candidate_inputs, np.concatenate((gold_idxs, knn_dict_idxs[~np.isin(knn_dict_idxs, gold_idxs)]))[:knn]))
             candidate_inputs = torch.tensor(list(map(lambda x: train_dict_vecs[x].numpy(), candidate_inputs))).cuda()
             context_inputs = context_inputs.cuda()
             label_inputs = label_inputs.cuda()
@@ -431,7 +347,7 @@ def main(params):
             if (step + 1) % (params["eval_interval"] * grad_acc_steps) == 0:
                 logger.info("Evaluation on the development dataset")
                 evaluate(
-                    reranker, valid_dataloader, valid_dict_vecs, params, device=device, logger=logger, topk=topk
+                    reranker, valid_dataloader, valid_dict_vecs, params, device=device, logger=logger, knn=knn
                 )
                 model.train()
                 logger.info("\n")
@@ -444,7 +360,7 @@ def main(params):
 
         output_eval_file = os.path.join(epoch_output_folder_path, "eval_results.txt")
         results = evaluate(
-            reranker, valid_dataloader, valid_dict_vecs, params, device=device, logger=logger, topk=topk
+            reranker, valid_dataloader, valid_dict_vecs, params, device=device, logger=logger, knn=knn
         )
 
         ls = [best_score, results["normalized_accuracy"]]
@@ -471,7 +387,7 @@ def main(params):
     if params["evaluate"]:
         params["path_to_model"] = model_output_path
         results = evaluate(
-            reranker, valid_dataloader, valid_dict_vecs, params, device=device, logger=logger, topk=topk
+            reranker, valid_dataloader, valid_dict_vecs, params, device=device, logger=logger, knn=knn
         )
 
 
