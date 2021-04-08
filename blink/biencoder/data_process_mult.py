@@ -107,6 +107,7 @@ def process_mention_data(
     max_context_length,
     max_cand_length,
     silent,
+    knn,
     mention_key="mention",
     context_key="context",
     label_key="label",
@@ -117,7 +118,6 @@ def process_mention_data(
     title_token=ENT_TITLE_TAG,
     debug=False,
     logger=None,
-    knn=knn
 ):
     processed_samples = []
     entity_dictionary = []
