@@ -53,6 +53,7 @@ def embed_and_index(model,
         raise ValueError("Invalid encoder_type: expected context or candidate")
     
     # Compute embeddings
+    embeds = None
     sampler = SequentialSampler(token_id_vecs)
     dataloader = DataLoader(
         token_id_vecs, sampler=sampler, batch_size=32
@@ -60,8 +61,7 @@ def embed_and_index(model,
     iter_ = tqdm(dataloader, desc="Embedding")
     for step, batch in enumerate(iter_):
         batch_embeds = encoder(batch.cuda())
-        embed()
-    # embeds = encoder(token_id_vecs.cuda())
+        embeds = batch_embeds if embeds is None else np.concatenate((embeds, batch_embeds), axis=0)
 
     # Build index
     d = embeds.shape[1]
