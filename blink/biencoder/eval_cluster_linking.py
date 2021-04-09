@@ -8,6 +8,7 @@
 import os
 import json
 import torch
+from torch.utils.data import (DataLoader, SequentialSampler)
 import numpy as np
 from tqdm import tqdm
 import pickle
@@ -52,14 +53,22 @@ def embed_and_index(model,
         raise ValueError("Invalid encoder_type: expected context or candidate")
     
     # Compute embeddings
-    embeds = encoder(token_id_vecs)
+    sampler = SequentialSampler(token_id_vecs)
+    dataloader = DataLoader(
+        token_id_vecs, sampler=sampler, batch_size=32
+    )
+    iter_ = tqdm(dataloader, desc="Embedding")
+    for step, batch in enumerate(iter_):
+        batch_embeds = encoder(batch.cuda())
+        embed()
+    # embeds = encoder(token_id_vecs.cuda())
 
     # Build index
     d = embeds.shape[1]
     nembeds = embeds.shape[0]
     if nembeds < 10000:  # if the number of embeddings is small, don't approximate
         index = faiss.IndexFlatIP(d)
-        index.add(embeds)
+        index.add(embeds.numpy())
     else:
         # number of quantized cells
         nlist = int(math.floor(math.sqrt(nembeds)))
