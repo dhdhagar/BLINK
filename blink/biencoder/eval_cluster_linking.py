@@ -174,19 +174,17 @@ def analyzeClusters(clusters, dictionary, queries, knn):
     ----------
     clusters : dict
         contains arrays of connected component indices of a graph
-    eval_dictionary : ndarray
+    dictionary : ndarray
         entity dictionary to evaluate
-    eval_queries : ndarray
+    queries : ndarray
         mention queries to evaluate
-    topk : int
+    knn : int
         the number of nearest-neighbour mention candidates considered
-    debug_mode : bool
-        Flag to enable reporting debug statistics
     
     Returns
     -------
     results : dict
-        Contains n_entities, n_mentions, k_candidates, accuracy, success[], failure[]
+        Contains n_entities, n_mentions, knn_mentions, accuracy, failure[], success[]
     """
     n_entities = len(dictionary)
     n_mentions = len(queries)
@@ -321,12 +319,12 @@ def main(params):
         # Embed entity dictionary and build indexes
         print("Dictionary: Embedding and building index")
         dict_embeds, dict_index = embed_and_index(
-            model, test_dict_vecs, 'candidate')
+            reranker, test_dict_vecs, 'candidate')
 
         # Embed mention queries and build indexes
         print("Queries: Embedding and building index")
         men_embeds, men_index = embed_and_index(
-            model, test_men_vecs, 'context')
+            reranker, test_men_vecs, 'context')
 
         # Find the most similar entity and k-nn mentions for each mention query
         for men_query_idx, men_embed in enumerate(tqdm(men_embeds, total=len(men_embeds), desc="Fetching k-NN")):
@@ -334,11 +332,11 @@ def main(params):
 
             # Fetch nearest entity candidate
             dict_cand_idx, dict_cand_score = get_query_nn(
-                model, 1, dict_embeds, dict_index, men_embed)
+                reranker, 1, dict_embeds, dict_index, men_embed)
 
             # Fetch (k+1) NN mention candidates
             men_cand_idxs, men_cand_scores = get_query_nn(
-                model, max_knn + 1, men_embeds, men_index, men_embed)
+                reranker, max_knn + 1, men_embeds, men_index, men_embed)
             # Filter candidates to remove mention query and keep only the top k candidates
             filter_mask = men_cand_idxs != men_query_idx
             men_cand_idxs, men_cand_scores = men_cand_idxs[filter_mask][:max_knn], men_cand_scores[filter_mask][:max_knn]
