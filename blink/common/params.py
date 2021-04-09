@@ -293,6 +293,10 @@ class BlinkParser(argparse.ArgumentParser):
             help="Path for candidate encoding",
         )
         parser.add_argument(
+            "--filter_unlabeled", action="store_true",
+            help="Whether to filter mentions that have no labeled entities from the test set",
+        )
+        parser.add_argument(
             "--knn", type=int, default=16,
             help="Number of kNN mention candidates to fetch per mention query during inference",
         )
