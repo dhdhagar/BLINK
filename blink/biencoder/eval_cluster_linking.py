@@ -8,6 +8,7 @@
 import os
 import json
 import torch
+import numpy as np
 from tqdm import tqdm
 import pickle
 import faiss
