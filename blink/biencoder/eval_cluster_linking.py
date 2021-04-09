@@ -208,7 +208,7 @@ def analyzeClusters(clusters, dictionary, queries, knn):
     }
     _debug_n_mens_evaluated, _debug_clusters_wo_entities, _debug_clusters_w_mult_entities = 0, 0, 0
 
-    print("Analyzing clusters")
+    print("Analyzing clusters...")
     for cluster in clusters.values():
         # The lowest value in the cluster should always be the entity
         pred_entity_idx = cluster[0]
@@ -251,6 +251,7 @@ def analyzeClusters(clusters, dictionary, queries, knn):
             else:
                 results['failure'].append(report_obj)
     results['accuracy'] = f"{results['accuracy'] / float(_debug_n_mens_evaluated) * 100} %"
+    print(f"Accuracy = {results['accuracy']}")
 
     # Run sanity checks
     assert n_mentions == _debug_n_mens_evaluated
@@ -373,7 +374,7 @@ def main(params):
 
     results = []
     for k in joint_graphs:
-        print(f"Graph (k={k}):")
+        print(f"\nGraph (k={k}):")
         # Partition graph based on cluster-linking constraints
         partitioned_graph, clusters = partition_graph(
             joint_graphs[k], n_entities, directed_graph, return_clusters=True)
