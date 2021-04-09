@@ -120,7 +120,7 @@ def get_query_nn(model,
     nn_embeds = torch.tensor(list(map(lambda x: embeds[x], nn_idxs))).cuda()
     
     # Compute query-candidate similarity scores
-    scores = torch.flatten(torch.mm(q_embed, nn_embeds.T))
+    scores = torch.flatten(torch.mm(q_embed.cuda(), nn_embeds.T)).cpu()
 
     # Sort the candidates by descending order of scores
     nn_idxs, scores = zip(
