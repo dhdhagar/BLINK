@@ -25,7 +25,7 @@ from blink.biencoder.biencoder import BiEncoderRanker
 from IPython import embed
 
 
-def embed_and_index(model, 
+def embed_and_index(model,
                     token_id_vecs,
                     encoder_type):
     """
@@ -51,7 +51,7 @@ def embed_and_index(model,
         encoder = model.encode_candidate
     else:
         raise ValueError("Invalid encoder_type: expected context or candidate")
-    
+
     # Compute embeddings
     embeds = None
     sampler = SequentialSampler(token_id_vecs)
@@ -85,10 +85,11 @@ def embed_and_index(model,
     # Return embeddings and indexes
     return embeds, index
 
+
 def get_query_nn(model,
-                 knn, 
-                 embeds,  
-                 index, 
+                 knn,
+                 embeds,
+                 index,
                  q_embed):
     """
     Parameters
@@ -118,16 +119,18 @@ def get_query_nn(model,
     _, nn_idxs = index.search(q_embed, k)
     nn_idxs = nn_idxs.astype(np.int64).flatten()
     nn_embeds = torch.tensor(list(map(lambda x: embeds[x], nn_idxs))).cuda()
-    
+
     # Compute query-candidate similarity scores
-    scores = torch.flatten(torch.mm(torch.tensor(q_embed).cuda(), nn_embeds.T)).cpu()
+    scores = torch.flatten(
+        torch.mm(torch.tensor(q_embed).cuda(), nn_embeds.T)).cpu()
 
     # Sort the candidates by descending order of scores
     nn_idxs, scores = zip(
         *sorted(zip(nn_idxs, scores), key=lambda x: -x[1]))
-    
+
     # Return only the top k neighbours
     return np.array(nn_idxs[:knn]), np.array(scores[:knn])
+
 
 def partition_graph(graph, n_entities, directed, return_clusters=False):
     """
@@ -159,7 +162,7 @@ def partition_graph(graph, n_entities, directed, return_clusters=False):
     # Construct the partitioned graph
     partitioned_graph = coo_matrix(
         (data, (rows, cols)), shape=graph['shape'])
-    
+
     if return_clusters:
         # Get an array of the graph with each index marked with the component label that it is connected to
         _, cc_labels = connected_components(
@@ -177,6 +180,7 @@ def partition_graph(graph, n_entities, directed, return_clusters=False):
 
     return partitioned_graph
 
+
 def analyzeClusters(clusters, dictionary, queries, knn):
     """
     Parameters
@@ -189,7 +193,7 @@ def analyzeClusters(clusters, dictionary, queries, knn):
         mention queries to evaluate
     knn : int
         the number of nearest-neighbour mention candidates considered
-    
+
     Returns
     -------
     results : dict
@@ -240,6 +244,7 @@ def analyzeClusters(clusters, dictionary, queries, knn):
                 'mention_id': men_query['mention_id'],
                 'mention_name': men_query['mention_name'],
                 'mention_gold_cui': '|'.join(men_golden_cuis),
+                'mention_gold_cui_name': '|'.join([dictionary[i]['title'] for i in men_query['label_idxs'][:men_query['n_labels']]]),
                 'predicted_name': '|'.join([d['title'] for d in [dictionary[i] for i in pred_entity_idxs]]),
                 'predicted_cui': '|'.join(pred_entity_cuis),
             }
@@ -260,19 +265,20 @@ def analyzeClusters(clusters, dictionary, queries, knn):
 
     return results
 
+
 def main(params):
     output_path = params["output_path"]
     if not os.path.exists(output_path):
         os.makedirs(output_path)
     logger = utils.get_logger(params["output_path"])
 
-    # Init model 
+    # Init model
     reranker = BiEncoderRanker(params)
     reranker.model.eval()
     tokenizer = reranker.tokenizer
     model = reranker.model
     device = reranker.device
-    
+
     knn = params["knn"]
     directed_graph = params["directed_graph"]
 
@@ -282,7 +288,7 @@ def main(params):
         # Filter samples without gold entities
         test_samples = list(filter(lambda sample: len(sample["labels"]) > 0, test_samples))
     logger.info("Read %d test samples." % len(test_samples))
-    
+
     mention_data, test_dictionary, test_tensor_data = data.process_mention_data(
         test_samples,
         tokenizer,
@@ -296,7 +302,8 @@ def main(params):
     )
 
     # Store test dictionary token ids
-    test_dict_vecs = torch.tensor(list(map(lambda x: x['ids'], test_dictionary)), dtype=torch.long)
+    test_dict_vecs = torch.tensor(
+        list(map(lambda x: x['ids'], test_dictionary)), dtype=torch.long)
     # Store test mention token ids
     test_men_vecs = test_tensor_data[:][0]
 
@@ -356,21 +363,25 @@ def main(params):
                 joint_graph = joint_graphs[k]
                 # Add mention-entity edge
                 joint_graph['rows'] = np.append(
-                    joint_graph['rows'], [n_entities+men_query_idx]) # Mentions added at an offset of maximum entities
-                joint_graph['cols'] = np.append(joint_graph['cols'], dict_cand_idx)
-                joint_graph['data'] = np.append(joint_graph['data'], dict_cand_score)
+                    joint_graph['rows'], [n_entities+men_query_idx])  # Mentions added at an offset of maximum entities
+                joint_graph['cols'] = np.append(
+                    joint_graph['cols'], dict_cand_idx)
+                joint_graph['data'] = np.append(
+                    joint_graph['data'], dict_cand_score)
                 if k > 0:
                     # Add mention-mention edges
                     joint_graph['rows'] = np.append(
                         joint_graph['rows'], [n_entities+men_query_idx]*len(men_cand_idxs[:k]))
                     joint_graph['cols'] = np.append(
                         joint_graph['cols'], n_entities+men_cand_idxs[:k])
-                    joint_graph['data'] = np.append(joint_graph['data'], men_cand_scores[:k])
-        
+                    joint_graph['data'] = np.append(
+                        joint_graph['data'], men_cand_scores[:k])
+
         # Pickle the graphs
         print("Saving joint graphs...")
         with open(graph_path, 'wb') as write_handle:
-            pickle.dump(joint_graphs, write_handle, protocol=pickle.HIGHEST_PROTOCOL)
+            pickle.dump(joint_graphs, write_handle,
+                        protocol=pickle.HIGHEST_PROTOCOL)
 
     results = []
     for k in joint_graphs:
@@ -384,7 +395,8 @@ def main(params):
         results.append(result)
 
     # Store results
-    output_file_name = os.path.join(output_path,f"eval_results_{__import__('calendar').timegm(__import__('time').gmtime())}")
+    output_file_name = os.path.join(
+        output_path, f"eval_results_{__import__('calendar').timegm(__import__('time').gmtime())}")
     result_overview = {
         'n_entities': results[0]['n_entities'],
         'n_mentions': results[0]['n_mentions'],
@@ -401,6 +413,7 @@ def main(params):
     with open(f'{output_file_name}.json', 'w') as f:
         json.dump(result_overview, f, indent=2)
         print(f"\nPredictions overview saved at: {output_file_name}.json")
+
 
 if __name__ == "__main__":
     parser = BlinkParser(add_model_args=True)
