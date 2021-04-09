@@ -337,7 +337,7 @@ def main(params):
 
         # Find the most similar entity and k-nn mentions for each mention query
         for men_query_idx, men_embed in enumerate(tqdm(men_embeds, total=len(men_embeds), desc="Fetching k-NN")):
-            men_embed = men_embed.unsqueeze(0)
+            men_embed = np.expand_dims(men_embed, axis=0)
 
             # Fetch nearest entity candidate
             dict_cand_idx, dict_cand_score = get_query_nn(
