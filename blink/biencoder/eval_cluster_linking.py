@@ -117,7 +117,7 @@ def get_query_nn(model,
     # Find k nearest neighbours
     _, nn_idxs = index.search(q_embed, k)
     nn_idxs = nn_idxs.astype(np.int64).flatten()
-    nn_embeds = torch.tensor(list(map(lambda x: embeds[x].numpy(), nn_idxs))).cuda()
+    nn_embeds = torch.tensor(list(map(lambda x: embeds[x], nn_idxs))).cuda()
     
     # Compute query-candidate similarity scores
     scores = torch.flatten(torch.mm(q_embed, nn_embeds.T))
