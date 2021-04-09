@@ -68,7 +68,7 @@ def embed_and_index(model,
     nembeds = embeds.shape[0]
     if nembeds < 10000:  # if the number of embeddings is small, don't approximate
         index = faiss.IndexFlatIP(d)
-        index.add(embeds.numpy())
+        index.add(embeds)
     else:
         # number of quantized cells
         nlist = int(math.floor(math.sqrt(nembeds)))
