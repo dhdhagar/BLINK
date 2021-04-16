@@ -28,7 +28,10 @@ from IPython import embed
 
 def embed_and_index(model,
                     token_id_vecs,
-                    encoder_type):
+                    encoder_type,
+                    batch_size=768,
+                    n_gpu=1,
+                    only_embed=False):
     """
     Parameters
     ----------
@@ -38,6 +41,12 @@ def embed_and_index(model,
         list of token id vectors to embed and index
     encoder_type : str
         "context" or "candidate"
+    batch_size : int
+        Per-gpu batch size for the data loader
+    n_gpu : int
+        Number of GPUs being used
+    only_embed : bool
+        Compute and return only the embeddings
 
     Returns
     -------
@@ -63,6 +72,9 @@ def embed_and_index(model,
     for step, batch in enumerate(iter_):
         batch_embeds = encoder(batch.cuda())
         embeds = batch_embeds if embeds is None else np.concatenate((embeds, batch_embeds), axis=0)
+
+    if only_embed:
+        return embeds
 
     # Build index
     d = embeds.shape[1]
@@ -294,6 +306,7 @@ def main(params):
     tokenizer = reranker.tokenizer
     model = reranker.model
     device = reranker.device
+    n_gpu = reranker.n_gpu
 
     knn = params["knn"]
     directed_graph = params["directed_graph"]
@@ -389,12 +402,12 @@ def main(params):
         # Embed entity dictionary and build indexes
         print("Dictionary: Embedding and building index")
         dict_embeds, dict_index = embed_and_index(
-            reranker, test_dict_vecs, 'candidate')
+            reranker, test_dict_vecs, 'candidate', n_gpu=n_gpu)
 
         # Embed mention queries and build indexes
         print("Queries: Embedding and building index")
         men_embeds, men_index = embed_and_index(
-            reranker, test_men_vecs, 'context')
+            reranker, test_men_vecs, 'context', n_gpu=n_gpu)
 
         recall_accuracy, recall_idxs = 0., [0.]*16
 

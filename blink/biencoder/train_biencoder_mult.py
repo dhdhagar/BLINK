@@ -28,67 +28,75 @@ from IPython import embed
 
 logger = None
 
-def batch_compute_embeddings(encoder, vectors, batch_size=768, n_gpu=1):
+def embed_and_index(model, token_id_vecs, encoder_type, batch_size=768, n_gpu=1, only_embed=False):
     with torch.no_grad():
+        if encoder_type == 'context':
+            encoder = model.encode_context
+        elif encoder_type == 'candidate':
+            encoder = model.encode_candidate
+        else:
+            raise ValueError("Invalid encoder_type: expected context or candidate")
+
+        # Compute embeddings
         embeds = None
-        sampler = SequentialSampler(vectors)
+        sampler = SequentialSampler(token_id_vecs)
         dataloader = DataLoader(
-            vectors, sampler=sampler, batch_size=(batch_size * n_gpu)
+            token_id_vecs, sampler=sampler, batch_size=(batch_size * n_gpu)
         )
         iter_ = tqdm(dataloader, desc="Embedding in batches")
         for step, batch in enumerate(iter_):
             batch_embeds = encoder(batch.cuda())
             embeds = batch_embeds if embeds is None else np.concatenate((embeds, batch_embeds), axis=0)
-    return embeds
 
-# The evaluate function makes a prediction on a set of knn candidates for every mention
-def evaluate(
-    reranker, eval_dataloader, valid_dict_vecs, params, device, logger, knn, n_gpu
-):
-    reranker.model.eval()
+        if only_embed:
+            return embeds
 
-    # To accomodate the approximate-nature of the knn procedure, retrieve more samples and then filter down
-    knn = max(16, 2*knn)
-
-    if params["silent"]:
-        iter_ = eval_dataloader
-    else:
-        iter_ = tqdm(eval_dataloader, desc="Evaluation")
-
-    results = {}
-
-    eval_accuracy = 0.0
-    nb_eval_examples = 0
-    nb_eval_steps = 0
-
-    with torch.no_grad():
-        # Compute dictionary embeddings at the beginning of every epoch
-        valid_dict_embeddings = batch_compute_embeddings(reranker.encode_candidate, valid_dict_vecs, n_gpu=n_gpu)
-        # Build the dictionary index
-        d = valid_dict_embeddings.shape[1]
-        nembeds = valid_dict_embeddings.shape[0]
+        # Build index
+        d = embeds.shape[1]
+        nembeds = embeds.shape[0]
         if nembeds < 10000:  # if the number of embeddings is small, don't approximate
-            valid_dict_index = faiss.IndexFlatIP(d)
-            valid_dict_index.add(np.array(valid_dict_embeddings))
+            index = faiss.IndexFlatIP(d)
+            index.add(embeds)
         else:
             # number of quantized cells
             nlist = int(math.floor(math.sqrt(nembeds)))
             # number of the quantized cells to probe
             nprobe = int(math.floor(math.sqrt(nlist)))
             quantizer = faiss.IndexFlatIP(d)
-            valid_dict_index = faiss.IndexIVFFlat(
+            index = faiss.IndexIVFFlat(
                 quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
             )
-            valid_dict_index.train(np.array(valid_dict_embeddings))
-            valid_dict_index.add(np.array(valid_dict_embeddings))
-            valid_dict_index.nprobe = nprobe
+            index.train(embeds)
+            index.add(embeds)
+            index.nprobe = nprobe
+
+    # Return embeddings and indexes
+    return embeds, index
+
+# The evaluate function makes a prediction on a set of knn candidates for every mention
+def evaluate(
+    reranker, eval_dataloader, valid_dict_vecs, params, device, logger, knn, n_gpu
+):
+    reranker.model.eval()
+    # To accomodate the approximate-nature of the knn procedure, retrieve more samples and then filter down
+    knn = max(16, 2*knn)
+    if params["silent"]:
+        iter_ = eval_dataloader
+    else:
+        iter_ = tqdm(eval_dataloader, desc="Evaluation")
+    results = {}
+    eval_accuracy = 0.0
+    nb_eval_examples = 0
+    nb_eval_steps = 0
+
+    valid_dict_embeddings, valid_dict_index = embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu)
 
     for step, batch in enumerate(iter_):
         batch = tuple(t.to(device) for t in batch)
-        context_inputs, candidate_idxs, n_gold = batch
+        context_inputs, candidate_idxs, n_gold, _ = batch
         
         with torch.no_grad():
-            mention_embeddings = reranker.encode_context(context_inputs) 
+            mention_embeddings = reranker.encode_context(context_inputs)
             
             # context_inputs: Shape: batch x token_len
             candidate_inputs = np.array([], dtype=np.long) # Shape: (batch*knn) x token_len
@@ -108,9 +116,7 @@ def evaluate(
 
         logits = logits.detach().cpu().numpy()
         tmp_eval_accuracy = int(torch.sum(label_inputs[np.arange(label_inputs.shape[0]), np.argmax(logits, axis=1)] == 1))
-
         eval_accuracy += tmp_eval_accuracy
-
         nb_eval_examples += context_inputs.size(0)
         nb_eval_steps += 1
 
@@ -236,6 +242,8 @@ def main(params):
 
         # Store the entity dictionary vectors
         entity_dict_vecs = torch.tensor(list(map(lambda x: x['ids'], entity_dictionary)), dtype=torch.long)
+        # Store the query mention vectors
+        train_men_vecs = train_tensor_data[:][0]
 
         if params["shuffle"]:
             train_sampler = RandomSampler(train_tensor_data)
@@ -314,27 +322,9 @@ def main(params):
         tr_loss = 0
         results = None
 
-        with torch.no_grad():
-            # Compute dictionary embeddings at the beginning of every epoch
-            train_dict_embeddings = batch_compute_embeddings(reranker.encode_candidate, entity_dict_vecs, n_gpu=n_gpu)
-            # Build the dictionary index
-            d = train_dict_embeddings.shape[1]
-            nembeds = train_dict_embeddings.shape[0]
-            if nembeds < 10000:  # if the number of embeddings is small, don't approximate
-                train_dict_index = faiss.IndexFlatIP(d)
-                train_dict_index.add(np.array(train_dict_embeddings))
-            else:
-                # number of quantized cells
-                nlist = int(math.floor(math.sqrt(nembeds)))
-                # number of the quantized cells to probe
-                nprobe = int(math.floor(math.sqrt(nlist)))
-                quantizer = faiss.IndexFlatIP(d)
-                train_dict_index = faiss.IndexIVFFlat(
-                    quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
-                )
-                train_dict_index.train(np.array(train_dict_embeddings))
-                train_dict_index.add(np.array(train_dict_embeddings))
-                train_dict_index.nprobe = nprobe
+        # Compute mention and entity embeddings at the start of each epoch
+        train_dict_embeddings, train_dict_index = embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu)
+        train_men_embeddings = embed_and_index(reranker, train_men_vecs, encoder_type="context", n_gpu=n_gpu, only_embed=True)
 
         if params["silent"]:
             iter_ = train_dataloader
@@ -343,14 +333,14 @@ def main(params):
 
         for step, batch in enumerate(iter_):
             batch = tuple(t.to(device) for t in batch)
-            context_inputs, candidate_idxs, n_gold = batch
-            mention_embedding = reranker.encode_context(context_inputs)
+            context_inputs, candidate_idxs, n_gold, mention_idxs = batch
+            mention_embeddings = train_men_embeddings[mention_idxs]
             
             # context_inputs: Shape: batch x token_len
             candidate_inputs = np.array([], dtype=np.long) # Shape: (batch*knn) x token_len
             label_inputs = (candidate_idxs >= 0).type(torch.float32) # Shape: batch x knn
 
-            for i, m_embed in enumerate(mention_embedding):
+            for i, m_embed in enumerate(mention_embeddings):
                 _, knn_dict_idxs = train_dict_index.search(np.expand_dims(m_embed, axis=0), knn)
                 knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()                
                 gold_idxs = candidate_idxs[i][:n_gold[i]].cpu()

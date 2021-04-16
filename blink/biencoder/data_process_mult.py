@@ -193,6 +193,8 @@ def process_mention_data(
     n_labels = torch.tensor(
         select_field(processed_samples, "n_labels"), dtype=torch.int,
     )
-    tensor_data = TensorDataset(context_vecs, label_idxs, n_labels)
+    mention_idx = torch.arange(len(n_labels), dtype=torch.int)
+
+    tensor_data = TensorDataset(context_vecs, label_idxs, n_labels, mention_idx)
 
     return processed_samples, entity_dictionary, tensor_data
