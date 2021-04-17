@@ -174,7 +174,6 @@ def main(params):
         )
 
     # An effective batch size of `x`, when we are accumulating the gradient accross `y` batches will be achieved by having a batch size of `z = x / y`
-    # args.gradient_accumulation_steps = args.gradient_accumulation_steps // n_gpu
     params["train_batch_size"] = (
         params["train_batch_size"] // params["gradient_accumulation_steps"]
     )
@@ -334,7 +333,7 @@ def main(params):
         for step, batch in enumerate(iter_):
             batch = tuple(t.to(device) for t in batch)
             context_inputs, candidate_idxs, n_gold, mention_idxs = batch
-            mention_embeddings = train_men_embeddings[mention_idxs]
+            mention_embeddings = train_men_embeddings[mention_idxs.cpu()]
             
             # context_inputs: Shape: batch x token_len
             candidate_inputs = np.array([], dtype=np.long) # Shape: (batch*knn) x token_len
