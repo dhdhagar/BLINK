@@ -252,6 +252,10 @@ class BlinkParser(argparse.ArgumentParser):
             "--filter_unlabeled", action="store_true",
             help="Whether to filter mentions that have no labeled entities from the train set",
         )
+        parser.add_argument(
+            "--use_types", action="store_true",
+            help="Whether to pick candidates from only the entities belonging to the mention type",
+        )
 
     def add_eval_args(self, args=None):
         """

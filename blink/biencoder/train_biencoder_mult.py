@@ -28,7 +28,28 @@ from IPython import embed
 
 logger = None
 
-def embed_and_index(model, token_id_vecs, encoder_type, batch_size=768, n_gpu=1, only_embed=False):
+def embed_and_index(model, token_id_vecs, encoder_type, batch_size=768, n_gpu=1, only_embed=False, entity_dictionary=None):
+    def build_index(embeds):
+        # Build index
+        d = embeds.shape[1]
+        nembeds = embeds.shape[0]
+        if nembeds < 10000:  # if the number of embeddings is small, don't approximate
+            index = faiss.IndexFlatIP(d)
+            index.add(embeds)
+        else:
+            # number of quantized cells
+            nlist = int(math.floor(math.sqrt(nembeds)))
+            # number of the quantized cells to probe
+            nprobe = int(math.floor(math.sqrt(nlist)))
+            quantizer = faiss.IndexFlatIP(d)
+            index = faiss.IndexIVFFlat(
+                quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
+            )
+            index.train(embeds)
+            index.add(embeds)
+            index.nprobe = nprobe
+        return index
+    
     with torch.no_grad():
         if encoder_type == 'context':
             encoder = model.encode_context
@@ -51,33 +72,31 @@ def embed_and_index(model, token_id_vecs, encoder_type, batch_size=768, n_gpu=1,
         if only_embed:
             return embeds
 
-        # Build index
-        d = embeds.shape[1]
-        nembeds = embeds.shape[0]
-        if nembeds < 10000:  # if the number of embeddings is small, don't approximate
-            index = faiss.IndexFlatIP(d)
-            index.add(embeds)
-        else:
-            # number of quantized cells
-            nlist = int(math.floor(math.sqrt(nembeds)))
-            # number of the quantized cells to probe
-            nprobe = int(math.floor(math.sqrt(nlist)))
-            quantizer = faiss.IndexFlatIP(d)
-            index = faiss.IndexIVFFlat(
-                quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
-            )
-            index.train(embeds)
-            index.add(embeds)
-            index.nprobe = nprobe
-
-    # Return embeddings and indexes
-    return embeds, index
+        if entity_dictionary is None:
+            # When "use_types" is False
+            index = build_index(embeds)
+            return embeds, index
+        
+        # Build type-specific search indexes
+        search_indexes = {}
+        entity_dictionary_idxs = {}
+        for i,e in enumerate(entity_dictionary):
+            ent_type = e['type']
+            if ent_type not in entity_dictionary_idxs:
+                entity_dictionary_idxs[ent_type] = []
+            entity_dictionary_idxs[ent_type].append(i)
+        for ent_type in entity_dictionary_idxs:
+            search_indexes[ent_type] = build_index(embeds[entity_dictionary_idxs[ent_type]])
+        return embeds, search_indexes, entity_dictionary_idxs
 
 # The evaluate function makes a prediction on a set of knn candidates for every mention
 def evaluate(
-    reranker, eval_dataloader, valid_dict_vecs, params, device, logger, knn, n_gpu
+    reranker, eval_dataloader, valid_dict_vecs, params, device, logger, knn, n_gpu, type_data=None
 ):
     reranker.model.eval()
+    
+    use_types = type_data is not None # Should be a dict containing "entity_dictionary" and "mention_data"
+    
     # To accomodate the approximate-nature of the knn procedure, retrieve more samples and then filter down
     knn = max(16, 2*knn)
     if params["silent"]:
@@ -89,11 +108,14 @@ def evaluate(
     nb_eval_examples = 0
     nb_eval_steps = 0
 
-    valid_dict_embeddings, valid_dict_index = embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu)
+    if not use_types:
+        valid_dict_embeddings, valid_dict_index = embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu)
+    else:
+        valid_dict_embeddings, valid_dict_indexes, dict_idxs_by_type = embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, entity_dictionary=type_data['entity_dictionary'])
 
     for step, batch in enumerate(iter_):
         batch = tuple(t.to(device) for t in batch)
-        context_inputs, candidate_idxs, n_gold, _ = batch
+        context_inputs, candidate_idxs, n_gold, mention_idxs = batch
         
         with torch.no_grad():
             mention_embeddings = reranker.encode_context(context_inputs)
@@ -103,8 +125,14 @@ def evaluate(
             label_inputs = torch.zeros((context_inputs.shape[0], knn), dtype=torch.float32) # Shape: batch x knn
 
             for i, m_embed in enumerate(mention_embeddings):
+                if use_types:
+                    entity_type = type_data['mention_data'][mention_idxs[i]]['type']
+                    valid_dict_index = valid_dict_indexes[entity_type]
                 _, knn_dict_idxs = valid_dict_index.search(np.expand_dims(m_embed, axis=0), knn)
-                knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()                
+                knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()
+                if use_types:
+                    # Map type-specific indices to the entire dictionary
+                    knn_dict_idxs = list(map(lambda x: dict_idxs_by_type[entity_type][x], knn_dict_idxs))
                 gold_idxs = candidate_idxs[i][:n_gold[i]].cpu()
                 candidate_inputs = np.concatenate((candidate_inputs, knn_dict_idxs))
                 label_inputs[i] = torch.tensor([1 if nn in gold_idxs else 0 for nn in knn_dict_idxs])
@@ -157,6 +185,7 @@ def main(params):
     logger = utils.get_logger(params["output_path"])
 
     knn = params["knn"]
+    use_types = params["use_types"]
 
     # Init model
     reranker = BiEncoderRanker(params)
@@ -216,7 +245,7 @@ def main(params):
                 train_samples = list(filter(lambda sample: (len(sample["labels"]) > 0) if mult_labels else (sample["label"] is not None), train_samples))
             logger.info("Read %d train samples." % len(train_samples))
 
-            _, entity_dictionary, train_tensor_data = data.process_mention_data(
+            processed_mention_data, entity_dictionary, train_tensor_data = data.process_mention_data(
                 train_samples,
                 entity_dictionary,
                 tokenizer,
@@ -267,7 +296,7 @@ def main(params):
         valid_samples = list(filter(lambda sample: (len(sample["labels"]) > 0) if mult_labels else (sample["label"] is not None), valid_samples))
         logger.info("Read %d valid samples." % len(valid_samples))
 
-        _, _, valid_tensor_data = data.process_mention_data(
+        processed_valid_mention_data, _, valid_tensor_data = data.process_mention_data(
             valid_samples,
             entity_dictionary,
             tokenizer,
@@ -291,11 +320,16 @@ def main(params):
         valid_tensor_data, sampler=valid_sampler, batch_size=eval_batch_size
     )
 
+    evaluate_type_data = {
+        'entity_dictionary': entity_dictionary,
+        'mention_data': processed_valid_mention_data
+    } if use_types else None
+
     if params["only_evaluate"]:
         # Get the entity dictionary vectors
         entity_dict_vecs = torch.tensor(list(map(lambda x: x['ids'], entity_dictionary)), dtype=torch.long)
         evaluate(
-            reranker, valid_dataloader, entity_dict_vecs, params, device=device, logger=logger, knn=knn, n_gpu=n_gpu
+            reranker, valid_dataloader, entity_dict_vecs, params, device=device, logger=logger, knn=knn, n_gpu=n_gpu, type_data=evaluate_type_data
         )
         exit()
 
@@ -322,7 +356,10 @@ def main(params):
         results = None
 
         # Compute mention and entity embeddings at the start of each epoch
-        train_dict_embeddings, train_dict_index = embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu)
+        if use_types:
+            train_dict_embeddings, train_dict_indexes, dict_idxs_by_type = embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, entity_dictionary=entity_dictionary)
+        else:
+            train_dict_embeddings, train_dict_index = embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu)
         train_men_embeddings = embed_and_index(reranker, train_men_vecs, encoder_type="context", n_gpu=n_gpu, only_embed=True)
 
         if params["silent"]:
@@ -340,8 +377,14 @@ def main(params):
             label_inputs = (candidate_idxs >= 0).type(torch.float32) # Shape: batch x knn
 
             for i, m_embed in enumerate(mention_embeddings):
+                if use_types:
+                    entity_type = processed_mention_data[mention_idxs[i]]['type']
+                    train_dict_index = train_dict_indexes[entity_type]
                 _, knn_dict_idxs = train_dict_index.search(np.expand_dims(m_embed, axis=0), knn)
-                knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()                
+                knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()
+                if use_types:
+                    # Map type-specific indices to the entire dictionary
+                    knn_dict_idxs = list(map(lambda x: dict_idxs_by_type[entity_type][x], knn_dict_idxs))
                 gold_idxs = candidate_idxs[i][:n_gold[i]].cpu()
                 candidate_inputs = np.concatenate((candidate_inputs, np.concatenate((gold_idxs, knn_dict_idxs[~np.isin(knn_dict_idxs, gold_idxs)]))[:knn]))
             candidate_inputs = torch.tensor(list(map(lambda x: entity_dict_vecs[x].numpy(), candidate_inputs))).cuda()
@@ -378,7 +421,7 @@ def main(params):
             if (step + 1) % (params["eval_interval"] * grad_acc_steps) == 0:
                 logger.info("Evaluation on the development dataset")
                 evaluate(
-                    reranker, valid_dataloader, entity_dict_vecs, params, device=device, logger=logger, knn=knn, n_gpu=n_gpu
+                    reranker, valid_dataloader, entity_dict_vecs, params, device=device, logger=logger, knn=knn, n_gpu=n_gpu, type_data=evaluate_type_data
                 )
                 model.train()
                 logger.info("\n")
@@ -391,7 +434,7 @@ def main(params):
 
         output_eval_file = os.path.join(epoch_output_folder_path, "eval_results.txt")
         results = evaluate(
-            reranker, valid_dataloader, entity_dict_vecs, params, device=device, logger=logger, knn=knn, n_gpu=n_gpu
+            reranker, valid_dataloader, entity_dict_vecs, params, device=device, logger=logger, knn=knn, n_gpu=n_gpu, type_data=evaluate_type_data
         )
 
         ls = [best_score, results["normalized_accuracy"]]
