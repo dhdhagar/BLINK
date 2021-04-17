@@ -228,9 +228,12 @@ def main(params):
     if not params["only_evaluate"]:
         # Load train data
         train_tensor_data_pkl_path = os.path.join(model_output_path, 'train_tensor_data.pickle')
-        if os.path.isfile(train_tensor_data_pkl_path):
+        train_processed_data_pkl_path = os.path.join(model_output_path, 'train_processed_data.pickle')
+        if os.path.isfile(train_tensor_data_pkl_path) and os.path.isfile(train_mention_data_pkl_path):
             print("Loading stored processed train data...")
             with open(train_tensor_data_pkl_path, 'rb') as read_handle:
+                train_tensor_data = pickle.load(read_handle)
+            with open(train_mention_data_pkl_path, 'rb') as read_handle:
                 train_tensor_data = pickle.load(read_handle)
         else:
             train_samples = utils.read_dataset("train", params["data_path"])
@@ -245,7 +248,7 @@ def main(params):
                 train_samples = list(filter(lambda sample: (len(sample["labels"]) > 0) if mult_labels else (sample["label"] is not None), train_samples))
             logger.info("Read %d train samples." % len(train_samples))
 
-            processed_mention_data, entity_dictionary, train_tensor_data = data.process_mention_data(
+            train_processed_data, entity_dictionary, train_tensor_data = data.process_mention_data(
                 train_samples,
                 entity_dictionary,
                 tokenizer,
@@ -267,6 +270,9 @@ def main(params):
             with open(train_tensor_data_pkl_path, 'wb') as write_handle:
                 pickle.dump(train_tensor_data, write_handle,
                             protocol=pickle.HIGHEST_PROTOCOL)
+            with open(train_processed_data_pkl_path, 'wb') as write_handle:
+                pickle.dump(train_processed_data, write_handle,
+                            protocol=pickle.HIGHEST_PROTOCOL)
 
         # Store the entity dictionary vectors
         entity_dict_vecs = torch.tensor(list(map(lambda x: x['ids'], entity_dictionary)), dtype=torch.long)
@@ -284,10 +290,13 @@ def main(params):
 
     # Load eval data
     valid_tensor_data_pkl_path = os.path.join(model_output_path, 'valid_tensor_data.pickle')
-    if os.path.isfile(valid_tensor_data_pkl_path):
+    valid_processed_data_pkl_path = os.path.join(model_output_path, 'valid_processed_data.pickle')
+    if os.path.isfile(valid_tensor_data_pkl_path) and os.path.isfile(valid_processed_data_pkl_path):
         print("Loading stored processed valid data...")
         with open(valid_tensor_data_pkl_path, 'rb') as read_handle:
             valid_tensor_data = pickle.load(read_handle)
+        with open(valid_processed_data_pkl_path, 'rb') as read_handle:
+            valid_processed_data = pickle.load(read_handle)
     else:
         valid_samples = utils.read_dataset("valid", params["data_path"])
         # Check if dataset has multiple ground-truth labels
@@ -296,7 +305,7 @@ def main(params):
         valid_samples = list(filter(lambda sample: (len(sample["labels"]) > 0) if mult_labels else (sample["label"] is not None), valid_samples))
         logger.info("Read %d valid samples." % len(valid_samples))
 
-        processed_valid_mention_data, _, valid_tensor_data = data.process_mention_data(
+        valid_processed_data, _, valid_tensor_data = data.process_mention_data(
             valid_samples,
             entity_dictionary,
             tokenizer,
@@ -314,6 +323,9 @@ def main(params):
         with open(valid_tensor_data_pkl_path, 'wb') as write_handle:
             pickle.dump(valid_tensor_data, write_handle,
                         protocol=pickle.HIGHEST_PROTOCOL)
+        with open(valid_processed_data_pkl_path, 'wb') as write_handle:
+                pickle.dump(valid_processed_data, write_handle,
+                            protocol=pickle.HIGHEST_PROTOCOL)
 
     valid_sampler = SequentialSampler(valid_tensor_data)
     valid_dataloader = DataLoader(
@@ -322,7 +334,7 @@ def main(params):
 
     evaluate_type_data = {
         'entity_dictionary': entity_dictionary,
-        'mention_data': processed_valid_mention_data
+        'mention_data': valid_processed_data
     } if use_types else None
 
     if params["only_evaluate"]:
@@ -378,7 +390,7 @@ def main(params):
 
             for i, m_embed in enumerate(mention_embeddings):
                 if use_types:
-                    entity_type = processed_mention_data[mention_idxs[i]]['type']
+                    entity_type = train_processed_data[mention_idxs[i]]['type']
                     train_dict_index = train_dict_indexes[entity_type]
                 _, knn_dict_idxs = train_dict_index.search(np.expand_dims(m_embed, axis=0), knn)
                 knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()
