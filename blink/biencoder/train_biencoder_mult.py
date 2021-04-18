@@ -396,7 +396,7 @@ def main(params):
                 knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()
                 if use_types:
                     # Map type-specific indices to the entire dictionary
-                    knn_dict_idxs = list(map(lambda x: dict_idxs_by_type[entity_type][x], knn_dict_idxs))
+                    knn_dict_idxs = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], knn_dict_idxs)), dtype=np.int64)
                 gold_idxs = candidate_idxs[i][:n_gold[i]].cpu()
                 candidate_inputs = np.concatenate((candidate_inputs, np.concatenate((gold_idxs, knn_dict_idxs[~np.isin(knn_dict_idxs, gold_idxs)]))[:knn]))
             candidate_inputs = torch.tensor(list(map(lambda x: entity_dict_vecs[x].numpy(), candidate_inputs))).cuda()
