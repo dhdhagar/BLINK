@@ -31,7 +31,8 @@ def embed_and_index(model,
                     encoder_type,
                     batch_size=768,
                     n_gpu=1,
-                    only_embed=False):
+                    only_embed=False,
+                    dictionary=None):
     """
     Parameters
     ----------
@@ -42,11 +43,13 @@ def embed_and_index(model,
     encoder_type : str
         "context" or "candidate"
     batch_size : int
-        Per-gpu batch size for the data loader
+        per-gpu batch size for the data loader
     n_gpu : int
-        Number of GPUs being used
+        number of GPUs being used
     only_embed : bool
-        Compute and return only the embeddings
+        compute and return only the embeddings
+    dictionary : array
+        list of mentions/entities along with metadata
 
     Returns
     -------
@@ -55,6 +58,27 @@ def embed_and_index(model,
     index : faiss
         faiss index of the embeddings
     """
+    def build_index(embeds):
+        # Build index
+        d = embeds.shape[1]
+        nembeds = embeds.shape[0]
+        if nembeds < 10000:  # if the number of embeddings is small, don't approximate
+            index = faiss.IndexFlatIP(d)
+            index.add(embeds)
+        else:
+            # number of quantized cells
+            nlist = int(math.floor(math.sqrt(nembeds)))
+            # number of the quantized cells to probe
+            nprobe = int(math.floor(math.sqrt(nlist)))
+            quantizer = faiss.IndexFlatIP(d)
+            index = faiss.IndexIVFFlat(
+                quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
+            )
+            index.train(embeds)
+            index.add(embeds)
+            index.nprobe = nprobe
+        return index
+    
     if encoder_type == 'context':
         encoder = model.encode_context
     elif encoder_type == 'candidate':
@@ -76,27 +100,22 @@ def embed_and_index(model,
     if only_embed:
         return embeds
 
-    # Build index
-    d = embeds.shape[1]
-    nembeds = embeds.shape[0]
-    if nembeds < 10000:  # if the number of embeddings is small, don't approximate
-        index = faiss.IndexFlatIP(d)
-        index.add(embeds)
-    else:
-        # number of quantized cells
-        nlist = int(math.floor(math.sqrt(nembeds)))
-        # number of the quantized cells to probe
-        nprobe = int(math.floor(math.sqrt(nlist)))
-        quantizer = faiss.IndexFlatIP(d)
-        index = faiss.IndexIVFFlat(
-            quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
-        )
-        index.train(embeds)
-        index.add(embeds)
-        index.nprobe = nprobe
+    if dictionary is None:
+        # When "use_types" is False
+        index = build_index(embeds)
+        return embeds, index
 
-    # Return embeddings and indexes
-    return embeds, index
+    # Build type-specific search indexes
+    search_indexes = {}
+    dictionary_idxs = {}
+    for i,e in enumerate(dictionary):
+        ent_type = e['type']
+        if ent_type not in dictionary_idxs:
+            dictionary_idxs[ent_type] = []
+        dictionary_idxs[ent_type].append(i)
+    for ent_type in dictionary_idxs:
+        search_indexes[ent_type] = build_index(embeds[dictionary_idxs[ent_type]])
+    return embeds, search_indexes, dictionary_idxs
 
 
 def get_query_nn(model,
@@ -105,7 +124,8 @@ def get_query_nn(model,
                  index,
                  q_embed,
                  searchK=None,
-                 gold_idxs=None):
+                 gold_idxs=None,
+                 type_idx_mapping=None):
     """
     Parameters
     ----------
@@ -123,6 +143,8 @@ def get_query_nn(model,
         optional parameter, the exact number of nearest-neighbours to retrieve and score
     gold_idxs : array
         optional parameter, list of golden cui indexes
+    type_idx_mapping : array
+        optional parameter, list mapping type-specific indexes to the indexes of the full dictionary
 
     Returns
     -------
@@ -150,7 +172,7 @@ def get_query_nn(model,
     if gold_idxs is not None:
         # Calculate the knn index at which the gold cui is found (-1 if not found)
         for topk,i in enumerate(nn_idxs):
-            if i in gold_idxs:
+            if (i if type_idx_mapping is None else type_idx_mapping[i]) in gold_idxs:
                 break
             topk = -1
         # Return only the top k neighbours, and the recall index
@@ -310,8 +332,9 @@ def main(params):
 
     knn = params["knn"]
     directed_graph = params["directed_graph"]
-
+    use_types = params["use_types"]
     data_split = params["data_split"] # Parameter default is "test"
+
     # Load test data
     entity_dictionary_loaded = False
     test_dictionary_pkl_path = os.path.join(output_path, 'test_dictionary.pickle')
@@ -399,34 +422,49 @@ def main(params):
                 'shape': (n_entities+n_mentions, n_entities+n_mentions)
             }
 
-        # Embed entity dictionary and build indexes
-        print("Dictionary: Embedding and building index")
-        dict_embeds, dict_index = embed_and_index(
-            reranker, test_dict_vecs, 'candidate', n_gpu=n_gpu)
+        if use_types:
+            print("Dictionary: Embedding and building index")
+            dict_embeds, dict_indexes, dict_idxs_by_type = embed_and_index(reranker, test_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, dictionary=test_dictionary)
+            print("Queries: Embedding and building index")
+            men_embeds, men_indexes, men_idxs_by_type = embed_and_index(reranker, test_men_vecs, encoder_type="candidate", n_gpu=n_gpu, dictionary=mention_data)
+        else:
+            print("Dictionary: Embedding and building index")
+            dict_embeds, dict_index = embed_and_index(
+                reranker, test_dict_vecs, 'candidate', n_gpu=n_gpu)
+            print("Queries: Embedding and building index")
+            men_embeds, men_index = embed_and_index(
+                reranker, test_men_vecs, 'context', n_gpu=n_gpu)
 
-        # Embed mention queries and build indexes
-        print("Queries: Embedding and building index")
-        men_embeds, men_index = embed_and_index(
-            reranker, test_men_vecs, 'context', n_gpu=n_gpu)
-
-        recall_accuracy, recall_idxs = 0., [0.]*16
+        recall_accuracy, recall_idxs = 0., [0.]*params['recall_k']
 
         # Find the most similar entity and k-nn mentions for each mention query
         for men_query_idx, men_embed in enumerate(tqdm(men_embeds, total=len(men_embeds), desc="Fetching k-NN")):
             men_embed = np.expand_dims(men_embed, axis=0)
-
+            
+            dict_type_idx_mapping, men_type_idx_mapping = None, None
+            if use_types:
+                entity_type = mention_data[men_query_idx]['type']
+                dict_index = dict_indexes[entity_type]
+                men_index = men_indexes[entity_type]
+                dict_type_idx_mapping = dict_idxs_by_type[entity_type]
+                men_type_idx_mapping = men_idxs_by_type[entity_type]
+            
             # Fetch nearest entity candidate
             gold_idxs = mention_data[men_query_idx]["label_idxs"][:mention_data[men_query_idx]["n_labels"]]
             dict_cand_idx, dict_cand_score, recall_idx = get_query_nn(
-                reranker, 1, dict_embeds, dict_index, men_embed, gold_idxs=gold_idxs)
+                reranker, 1, dict_embeds, dict_index, men_embed, searchK=params['recall_k'], gold_idxs=gold_idxs, type_idx_mapping=dict_type_idx_mapping)
+            if use_types:
+                dict_cand_idx = dict_type_idx_mapping[dict_cand_idx]
+            # Compute recall metric
             if recall_idx > -1:
                 recall_accuracy += 1.
                 recall_idxs[recall_idx] += 1.
 
-
             # Fetch (k+1) NN mention candidates
             men_cand_idxs, men_cand_scores = get_query_nn(
                 reranker, max_knn + 1, men_embeds, men_index, men_embed)
+            if use_types:
+                men_cand_idxs = np.array(list(map(lambda x: men_type_idx_mapping[x], men_cand_idxs)))
             # Filter candidates to remove mention query and keep only the top k candidates
             filter_mask = men_cand_idxs != men_query_idx
             men_cand_idxs, men_cand_scores = men_cand_idxs[filter_mask][:max_knn], men_cand_scores[filter_mask][:max_knn]
@@ -454,7 +492,7 @@ def main(params):
         recall_idx_mode = np.argmax(recall_idxs)
         recall_idx_mode_prop = recall_idxs[recall_idx_mode]/np.sum(recall_idxs)
         recall_accuracy /= len(men_embeds)
-        logger.info(f"recall@16 = {recall_accuracy}")
+        logger.info(f"recall@{params['recall_k']} = {recall_accuracy}")
         logger.info(f"highest recall idx = {recall_idx_mode} ({recall_idx_mode_prop})")
 
         # Pickle the graphs

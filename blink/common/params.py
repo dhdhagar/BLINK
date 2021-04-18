@@ -315,6 +315,14 @@ class BlinkParser(argparse.ArgumentParser):
             "--data_split", type=str, default="test",
             help="The split of the dataset to run evaluation on",
         )
+        parser.add_argument(
+            "--use_types", action="store_true",
+            help="Whether to pick candidates from only the entities belonging to the mention type",
+        )
+        parser.add_argument(
+            "--recall_k", type=int, default=16,
+            help="Number of kNN entity candidates to fetch to calculate the model's recall accuracy",
+        )
 
     def add_joint_train_args(self, args=None):
         """
