@@ -229,11 +229,11 @@ def main(params):
         # Load train data
         train_tensor_data_pkl_path = os.path.join(model_output_path, 'train_tensor_data.pickle')
         train_processed_data_pkl_path = os.path.join(model_output_path, 'train_processed_data.pickle')
-        if os.path.isfile(train_tensor_data_pkl_path) and os.path.isfile(train_mention_data_pkl_path):
+        if os.path.isfile(train_tensor_data_pkl_path) and os.path.isfile(train_processed_data_pkl_path):
             print("Loading stored processed train data...")
             with open(train_tensor_data_pkl_path, 'rb') as read_handle:
                 train_tensor_data = pickle.load(read_handle)
-            with open(train_mention_data_pkl_path, 'rb') as read_handle:
+            with open(train_processed_data_pkl_path, 'rb') as read_handle:
                 train_tensor_data = pickle.load(read_handle)
         else:
             train_samples = utils.read_dataset("train", params["data_path"])
@@ -443,8 +443,8 @@ def main(params):
             model_output_path, "epoch_{}".format(epoch_idx)
         )
         utils.save_model(model, tokenizer, epoch_output_folder_path)
+        logger.info(f"Model saved at {epoch_output_folder_path}")
 
-        output_eval_file = os.path.join(epoch_output_folder_path, "eval_results.txt")
         results = evaluate(
             reranker, valid_dataloader, entity_dict_vecs, params, device=device, logger=logger, knn=knn, n_gpu=n_gpu, type_data=evaluate_type_data
         )
@@ -469,6 +469,7 @@ def main(params):
         model_output_path, "epoch_{}".format(best_epoch_idx)
     )
     utils.save_model(reranker.model, tokenizer, model_output_path)
+    logger.info(f"Best model saved at {model_output_path}")
 
 
 if __name__ == "__main__":
