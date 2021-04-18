@@ -176,10 +176,10 @@ def get_query_nn(model,
                 break
             topk = -1
         # Return only the top k neighbours, and the recall index
-        return np.array(nn_idxs[:knn]), np.array(scores[:knn]), topk
+        return np.array(nn_idxs[:knn], dtype=np.int64), np.array(scores[:knn]), topk
     
     # Return only the top k neighbours
-    return np.array(nn_idxs[:knn]), np.array(scores[:knn])
+    return np.array(nn_idxs[:knn], dtype=np.int64), np.array(scores[:knn])
 
 
 def partition_graph(graph, n_entities, directed, return_clusters=False):
