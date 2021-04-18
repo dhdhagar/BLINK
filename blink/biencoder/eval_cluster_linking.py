@@ -115,6 +115,7 @@ def embed_and_index(model,
         dictionary_idxs[ent_type].append(i)
     for ent_type in dictionary_idxs:
         search_indexes[ent_type] = build_index(embeds[dictionary_idxs[ent_type]])
+        dictionary_idxs[ent_type] = np.array(dictionary_idxs[ent_type])
     return embeds, search_indexes, dictionary_idxs
 
 
