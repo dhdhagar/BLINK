@@ -160,6 +160,8 @@ def get_query_nn(model,
     # Find k nearest neighbours
     _, nn_idxs = index.search(q_embed, k)
     nn_idxs = nn_idxs.astype(np.int64).flatten()
+    if type_idx_mapping is not None:
+        nn_idxs = np.array(list(map(lambda x: type_idx_mapping[x], nn_idxs)))
     nn_embeds = torch.tensor(list(map(lambda x: embeds[x], nn_idxs))).cuda()
 
     # Compute query-candidate similarity scores
@@ -173,7 +175,7 @@ def get_query_nn(model,
     if gold_idxs is not None:
         # Calculate the knn index at which the gold cui is found (-1 if not found)
         for topk,i in enumerate(nn_idxs):
-            if (i if type_idx_mapping is None else type_idx_mapping[i]) in gold_idxs:
+            if i in gold_idxs:
                 break
             topk = -1
         # Return only the top k neighbours, and the recall index
