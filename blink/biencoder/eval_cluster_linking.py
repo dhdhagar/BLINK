@@ -427,7 +427,7 @@ def main(params):
             print("Dictionary: Embedding and building index")
             dict_embeds, dict_indexes, dict_idxs_by_type = embed_and_index(reranker, test_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, dictionary=test_dictionary)
             print("Queries: Embedding and building index")
-            men_embeds, men_indexes, men_idxs_by_type = embed_and_index(reranker, test_men_vecs, encoder_type="candidate", n_gpu=n_gpu, dictionary=mention_data)
+            men_embeds, men_indexes, men_idxs_by_type = embed_and_index(reranker, test_men_vecs, encoder_type="context", n_gpu=n_gpu, dictionary=mention_data)
         else:
             print("Dictionary: Embedding and building index")
             dict_embeds, dict_index = embed_and_index(
