@@ -234,7 +234,7 @@ def main(params):
             with open(train_tensor_data_pkl_path, 'rb') as read_handle:
                 train_tensor_data = pickle.load(read_handle)
             with open(train_processed_data_pkl_path, 'rb') as read_handle:
-                train_tensor_data = pickle.load(read_handle)
+                train_processed_data = pickle.load(read_handle)
         else:
             train_samples = utils.read_dataset("train", params["data_path"])
             if not entity_dictionary_loaded:
