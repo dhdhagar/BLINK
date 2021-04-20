@@ -323,6 +323,10 @@ class BlinkParser(argparse.ArgumentParser):
             "--recall_k", type=int, default=16,
             help="Number of kNN entity candidates to fetch to calculate the model's recall accuracy",
         )
+        parser.add_argument(
+            "--only_recall", action="store_true",
+            help="Whether to run evaluation to only compute the recall metric for recall@{--recall_k}",
+        )
 
     def add_joint_train_args(self, args=None):
         """

@@ -438,7 +438,8 @@ def main(params):
             men_embeds, men_index = embed_and_index(
                 reranker, test_men_vecs, 'context', n_gpu=n_gpu)
 
-        recall_accuracy, recall_idxs = 0., [0.]*params['recall_k']
+        recall_accuracy = {2**i: 0 for i in range(int(math.log(params['recall_k'], 2)) + 1)}
+        recall_idxs = [0.]*params['recall_k']
 
         # Find the most similar entity and k-nn mentions for each mention query
         for men_query_idx, men_embed in enumerate(tqdm(men_embeds, total=len(men_embeds), desc="Fetching k-NN")):
@@ -458,41 +459,51 @@ def main(params):
                 reranker, 1, dict_embeds, dict_index, men_embed, searchK=params['recall_k'], gold_idxs=gold_idxs, type_idx_mapping=dict_type_idx_mapping)
             # Compute recall metric
             if recall_idx > -1:
-                recall_accuracy += 1.
                 recall_idxs[recall_idx] += 1.
+                for recall_k in recall_accuracy:
+                    if recall_idx < recall_k:
+                        recall_accuracy[recall_k] += 1.
 
-            # Fetch (k+1) NN mention candidates
-            men_cand_idxs, men_cand_scores = get_query_nn(
-                reranker, max_knn + 1, men_embeds, men_index, men_embed, type_idx_mapping=men_type_idx_mapping)
-            # Filter candidates to remove mention query and keep only the top k candidates
-            filter_mask = men_cand_idxs != men_query_idx
-            men_cand_idxs, men_cand_scores = men_cand_idxs[filter_mask][:max_knn], men_cand_scores[filter_mask][:max_knn]
+            if not params['only_recall']:
+                # Fetch (k+1) NN mention candidates
+                men_cand_idxs, men_cand_scores = get_query_nn(
+                    reranker, max_knn + 1, men_embeds, men_index, men_embed, type_idx_mapping=men_type_idx_mapping)
+                # Filter candidates to remove mention query and keep only the top k candidates
+                filter_mask = men_cand_idxs != men_query_idx
+                men_cand_idxs, men_cand_scores = men_cand_idxs[filter_mask][:max_knn], men_cand_scores[filter_mask][:max_knn]
 
-            # Add edges to the graphs
-            for k in joint_graphs:
-                joint_graph = joint_graphs[k]
-                # Add mention-entity edge
-                joint_graph['rows'] = np.append(
-                    joint_graph['rows'], [n_entities+men_query_idx])  # Mentions added at an offset of maximum entities
-                joint_graph['cols'] = np.append(
-                    joint_graph['cols'], dict_cand_idx)
-                joint_graph['data'] = np.append(
-                    joint_graph['data'], dict_cand_score)
-                if k > 0:
-                    # Add mention-mention edges
+                # Add edges to the graphs
+                for k in joint_graphs:
+                    joint_graph = joint_graphs[k]
+                    # Add mention-entity edge
                     joint_graph['rows'] = np.append(
-                        joint_graph['rows'], [n_entities+men_query_idx]*len(men_cand_idxs[:k]))
+                        joint_graph['rows'], [n_entities+men_query_idx])  # Mentions added at an offset of maximum entities
                     joint_graph['cols'] = np.append(
-                        joint_graph['cols'], n_entities+men_cand_idxs[:k])
+                        joint_graph['cols'], dict_cand_idx)
                     joint_graph['data'] = np.append(
-                        joint_graph['data'], men_cand_scores[:k])
+                        joint_graph['data'], dict_cand_score)
+                    if k > 0:
+                        # Add mention-mention edges
+                        joint_graph['rows'] = np.append(
+                            joint_graph['rows'], [n_entities+men_query_idx]*len(men_cand_idxs[:k]))
+                        joint_graph['cols'] = np.append(
+                            joint_graph['cols'], n_entities+men_cand_idxs[:k])
+                        joint_graph['data'] = np.append(
+                            joint_graph['data'], men_cand_scores[:k])
 
         # Compute and print recall metric
         recall_idx_mode = np.argmax(recall_idxs)
         recall_idx_mode_prop = recall_idxs[recall_idx_mode]/np.sum(recall_idxs)
-        recall_accuracy /= len(men_embeds)
-        logger.info(f"recall@{params['recall_k']} = {recall_accuracy}")
-        logger.info(f"highest recall idx = {recall_idx_mode} ({recall_idx_mode_prop})")
+        logger.info(f"""
+        Recall metrics (for {len(men_embeds)} queries):
+        ---------------""")
+        logger.info(f"highest recall idx = {recall_idx_mode} ({recall_idxs[recall_idx_mode]}/{np.sum(recall_idxs)} = {recall_idx_mode_prop})")
+        for recall_k in recall_accuracy:
+            recall_accuracy[recall_k] /= len(men_embeds)
+            logger.info(f"recall@{recall_k} = {recall_accuracy[recall_k]}")
+
+        if params['only_recall']:
+            exit()
 
         # Pickle the graphs
         print("Saving joint graphs...")
