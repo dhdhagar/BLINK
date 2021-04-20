@@ -456,8 +456,6 @@ def main(params):
             gold_idxs = mention_data[men_query_idx]["label_idxs"][:mention_data[men_query_idx]["n_labels"]]
             dict_cand_idx, dict_cand_score, recall_idx = get_query_nn(
                 reranker, 1, dict_embeds, dict_index, men_embed, searchK=params['recall_k'], gold_idxs=gold_idxs, type_idx_mapping=dict_type_idx_mapping)
-            if use_types:
-                dict_cand_idx = dict_type_idx_mapping[dict_cand_idx]
             # Compute recall metric
             if recall_idx > -1:
                 recall_accuracy += 1.
@@ -465,9 +463,7 @@ def main(params):
 
             # Fetch (k+1) NN mention candidates
             men_cand_idxs, men_cand_scores = get_query_nn(
-                reranker, max_knn + 1, men_embeds, men_index, men_embed)
-            if use_types:
-                men_cand_idxs = np.array(list(map(lambda x: men_type_idx_mapping[x], men_cand_idxs)))
+                reranker, max_knn + 1, men_embeds, men_index, men_embed, type_idx_mapping=men_type_idx_mapping)
             # Filter candidates to remove mention query and keep only the top k candidates
             filter_mask = men_cand_idxs != men_query_idx
             men_cand_idxs, men_cand_scores = men_cand_idxs[filter_mask][:max_knn], men_cand_scores[filter_mask][:max_knn]
