@@ -409,7 +409,7 @@ def main(params):
 
     # Check if graphs are already built
     graph_path = os.path.join(output_path, 'graphs.pickle')
-    if os.path.isfile(graph_path):
+    if not params['only_recall'] and os.path.isfile(graph_path):
         print("Loading stored joint graphs...")
         with open(graph_path, 'rb') as read_handle:
             joint_graphs = pickle.load(read_handle)
