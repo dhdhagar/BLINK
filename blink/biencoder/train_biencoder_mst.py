@@ -407,12 +407,12 @@ def main(params):
             for i, m_embed in enumerate(mention_embeddings):
                 mention_idx = mention_idxs[i]
                 gold_idxs = candidate_idxs[i][:n_gold[i]].cpu()
+                cluster_ent = int(gold_idxs[0])
                 # TODO: add multiple-entity support
                 if mention_idx in gold_links:
                     gold_link_idx = gold_links[mention_idx]
                 else:
                     # Run MST on gold entity's mention cluster to find positive edge for the query mention
-                    cluster_ent = gold_idxs[0]
                     cluster_mens = train_gold_clusters[cluster_ent]
                     rows, cols, data, shape = [], [], [], (n_entities+n_mentions, n_entities+n_mentions)
                     for i in range(len(cluster_mens)):
@@ -444,7 +444,7 @@ def main(params):
                     train_men_index = train_men_indexes[entity_type]
                 _, knn_dict_idxs = train_dict_index.search(np.expand_dims(m_embed, axis=0), knn_dict + n_gold[i])
                 knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()
-                _, knn_men_idxs = train_men_index.search(np.expand_dims(m_embed, axis=0), knn_men + len(train_gold_clusters[gold_idxs[0]]))
+                _, knn_men_idxs = train_men_index.search(np.expand_dims(m_embed, axis=0), knn_men + len(train_gold_clusters[cluster_ent]))
                 knn_men_idxs = knn_men_idxs.astype(np.int64).flatten()
                 if use_types:
                     # Map type-specific indices back to the entire list
@@ -454,7 +454,7 @@ def main(params):
                 positive_embeds.append(gold_link_idx)
                 # Add the negative examples
                 negative_dict_inputs += list(knn_dict_idxs[~np.isin(knn_dict_idxs, gold_idxs)][:knn_dict])
-                negative_men_inputs += list(knn_men_idxs[~np.isin(knn_men_idxs, train_gold_clusters[gold_idxs[0]])][:knn_men])
+                negative_men_inputs += list(knn_men_idxs[~np.isin(knn_men_idxs, train_gold_clusters[cluster_ent])][:knn_men])
             
             negative_dict_inputs = torch.tensor(list(map(lambda x: entity_dict_vecs[x].numpy(), negative_dict_inputs))).cuda()
             negative_men_inputs = torch.tensor(list(map(lambda x: train_men_vecs[x].numpy(), negative_men_inputs))).cuda()
