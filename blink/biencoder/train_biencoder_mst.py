@@ -19,7 +19,7 @@ from tqdm import tqdm, trange
 from numba import jit
 from special_partition.special_partition import cluster_linking_partition
 
-import blink.biencoder.data_process_mst as data
+import blink.biencoder.data_process_mst as data_process
 import blink.candidate_ranking.utils as utils
 from blink.biencoder.biencoder import BiEncoderRanker
 from blink.common.optimizer import get_bert_optimizer
@@ -250,7 +250,7 @@ def main(params):
                 train_samples = list(filter(lambda sample: (len(sample["labels"]) > 0) if mult_labels else (sample["label"] is not None), train_samples))
             logger.info("Read %d train samples." % len(train_samples))
 
-            train_processed_data, entity_dictionary, train_tensor_data = data.process_mention_data(
+            train_processed_data, entity_dictionary, train_tensor_data = data_process.process_mention_data(
                 train_samples,
                 entity_dictionary,
                 tokenizer,
@@ -307,7 +307,7 @@ def main(params):
         valid_samples = list(filter(lambda sample: (len(sample["labels"]) > 0) if mult_labels else (sample["label"] is not None), valid_samples))
         logger.info("Read %d valid samples." % len(valid_samples))
 
-        valid_processed_data, _, valid_tensor_data = data.process_mention_data(
+        valid_processed_data, _, valid_tensor_data = data_process.process_mention_data(
             valid_samples,
             entity_dictionary,
             tokenizer,
@@ -348,7 +348,7 @@ def main(params):
         exit()
 
     # Get clusters of mentions that map to a gold entity
-    train_gold_clusters = data.compute_gold_clusters(train_processed_data)    
+    train_gold_clusters = data_process.compute_gold_clusters(train_processed_data)
     n_entities = len(entity_dictionary)
     n_mentions = len(train_processed_data)
 
