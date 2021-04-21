@@ -206,7 +206,7 @@ def compute_gold_clusters(mention_data):
     clusters = {}
     for men_idx, mention in enumerate(mention_data):
         for i in range(mention['n_labels']):
-            label_idx = mention[label_idxs][i]
+            label_idx = mention['label_idxs'][i]
             if label_idx not in clusters:
                 clusters[label_idx] = []
             clusters[label_idx].append(men_idx)
