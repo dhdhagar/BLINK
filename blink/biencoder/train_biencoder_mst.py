@@ -465,14 +465,11 @@ def main(params):
             positive_embeds = None
             for pos_idx in positive_idxs:
                 if pos_idx < n_entities:
-                    pos_embed = reranker.encode_candidate(entity_dict_vecs[pos_idx:pos_idx + 1].cuda())
+                    pos_embed = reranker.encode_candidate(entity_dict_vecs[pos_idx:pos_idx + 1].cuda()).squeeze()
                 else:
-                    pos_embed = reranker.encode_context(train_men_vecs[pos_idx - n_entities:pos_idx - n_entities + 1].cuda())
-                if positive_embeds is None:
-                    positive_embeds = pos_embed
-                else:
-                    positive_embeds = torch.vstack((positive_embeds, pos_embed))
-            positive_embeds = positive_embeds.cuda()
+                    pos_embed = reranker.encode_context(train_men_vecs[pos_idx - n_entities:pos_idx - n_entities + 1].cuda()).squeeze()
+                positive_embeds.append(pos_embed)
+            positive_embeds = torch.stack(tuple(positive_embeds)).cuda()
             context_inputs = context_inputs.cuda()
             label_inputs = torch.tensor([[1]+[0]*(knn_dict+knn_men)]*len(context_inputs), dtype=torch.float32).cuda()
             
