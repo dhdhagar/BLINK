@@ -98,7 +98,7 @@ def get_candidate_representation(
         "ids": input_ids,
     }
 
-@njit(parallel=True)
+@jit(parallel=True)
 def process_mention_data(
     samples,
     entity_dictionary,
@@ -201,7 +201,7 @@ def process_mention_data(
 
     return processed_samples, entity_dictionary, tensor_data
 
-@njit(parallel=True)
+@jit(parallel=True)
 def compute_gold_clusters(mention_data):
     clusters = {}
     for men_idx, mention in enumerate(mention_data):
