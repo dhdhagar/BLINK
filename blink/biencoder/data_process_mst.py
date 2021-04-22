@@ -98,7 +98,6 @@ def get_candidate_representation(
         "ids": input_ids,
     }
 
-@jit(parallel=True)
 def process_mention_data(
     samples,
     entity_dictionary,
