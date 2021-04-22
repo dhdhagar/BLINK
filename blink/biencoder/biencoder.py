@@ -202,7 +202,7 @@ class BiEncoderRanker(torch.nn.Module):
             neg_dict_embeds = neg_dict_embeds.view(context_embeds.shape[0], neg_dict_embeds.shape[0]//context_embeds.shape[0], neg_dict_embeds.shape[1]) # batchsize x knn_dict x embed_size
             neg_men_embeds = neg_men_embeds.view(context_embeds.shape[0], neg_men_embeds.shape[0]//context_embeds.shape[0], neg_men_embeds.shape[1]) # batchsize x knn_men x embed_size
             
-            cand_embeds = torch.hstack((pos_embeds, neg_dict_embeds, neg_men_embeds)) # batchsize x knn x embed_size
+            cand_embeds = torch.cat((pos_embeds, neg_dict_embeds, neg_men_embeds), dim=1) # batchsize x knn x embed_size
 
             # Compute scores
             scores = torch.bmm(cand_embeds, context_embeds) # batchsize x topk x 1
