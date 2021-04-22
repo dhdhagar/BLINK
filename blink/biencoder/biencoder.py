@@ -196,9 +196,9 @@ class BiEncoderRanker(torch.nn.Module):
     def forward(self, context_input, cand_input=None, label_input=None, mst_data=None):
         if mst_data is not None:
             context_embeds = self.encode_context(context_input).unsqueeze(2) # batchsize x embed_size x 1
-            pos_embeds = mst_data['positive_embeds'].unsqueeze(1) # batchsize x 1 x embed_size
-            neg_dict_embeds = self.encode_candidate(mst_data['negative_dict_inputs']) # (batchsize*knn_dict) x embed_size
-            neg_men_embeds = self.encode_context(mst_data['negative_men_inputs']) # (batchsize*knn_men) x embed_size
+            pos_embeds = mst_data['positive_embeds'].cuda().unsqueeze(1) # batchsize x 1 x embed_size
+            neg_dict_embeds = self.encode_candidate(mst_data['negative_dict_inputs'].cuda()) # (batchsize*knn_dict) x embed_size
+            neg_men_embeds = self.encode_context(mst_data['negative_men_inputs'].cuda()) # (batchsize*knn_men) x embed_size
             neg_dict_embeds = neg_dict_embeds.view(context_embeds.shape[0], neg_dict_embeds.shape[0]//context_embeds.shape[0], neg_dict_embeds.shape[1]) # batchsize x knn_dict x embed_size
             neg_men_embeds = neg_men_embeds.view(context_embeds.shape[0], neg_men_embeds.shape[0]//context_embeds.shape[0], neg_men_embeds.shape[1]) # batchsize x knn_men x embed_size
             
