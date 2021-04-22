@@ -10,7 +10,7 @@ from tqdm import tqdm
 from torch.utils.data import TensorDataset
 from blink.biencoder.zeshel_utils import world_to_id
 from blink.common.params import ENT_START_TAG, ENT_END_TAG, ENT_TITLE_TAG
-from numba import njit
+from numba import jit, njit
 
 from IPython import embed
 
