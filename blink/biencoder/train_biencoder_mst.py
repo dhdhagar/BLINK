@@ -404,7 +404,7 @@ def main(params):
             # candidate_inputs = np.array([], dtype=np.long) # Shape: (batch*knn) x token_len
             # label_inputs = (candidate_idxs >= 0).type(torch.float32) # Shape: batch x knn
 
-            positive_embeds = []
+            positive_idxs = []
             negative_dict_inputs = []
             negative_men_inputs = []
 
@@ -455,14 +455,24 @@ def main(params):
                     knn_dict_idxs = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], knn_dict_idxs)), dtype=np.int64)
                     knn_men_idxs = np.array(list(map(lambda x: men_idxs_by_type[entity_type][x], knn_men_idxs)), dtype=np.int64)
                 # Add the positive example
-                positive_embeds.append(gold_link_idx)
+                positive_idxs.append(gold_link_idx)
                 # Add the negative examples
                 negative_dict_inputs += list(knn_dict_idxs[~np.isin(knn_dict_idxs, gold_idxs)][:knn_dict])
                 negative_men_inputs += list(knn_men_idxs[~np.isin(knn_men_idxs, train_gold_clusters[cluster_ent])][:knn_men])
             
             negative_dict_inputs = torch.tensor(list(map(lambda x: entity_dict_vecs[x].numpy(), negative_dict_inputs))).cuda()
             negative_men_inputs = torch.tensor(list(map(lambda x: train_men_vecs[x].numpy(), negative_men_inputs))).cuda()
-            positive_embeds = torch.tensor(list(map(lambda x: reranker.encode_candidate(entity_dict_vecs[x:x + 1].cuda()) if x < n_entities else reranker.encode_context(train_men_vecs[x - n_entities:x - n_entities + 1].cuda()), positive_embeds))).cuda()
+            positive_embeds = None
+            for pos_idx in positive_idxs:
+                if pos_idx < n_entities:
+                    pos_embed = reranker.encode_candidate(entity_dict_vecs[pos_idx:pos_idx + 1].cuda())
+                else:
+                    pos_embed = reranker.encode_context(train_men_vecs[pos_idx - n_entities:pos_idx - n_entities + 1].cuda())
+                if positive_embeds is None:
+                    positive_embeds = pos_embed
+                else:
+                    positive_embeds = torch.vstack((positive_embeds, pos_embed))
+            positive_embeds = positive_embeds.cuda()
             context_inputs = context_inputs.cuda()
             label_inputs = torch.tensor([[1]+[0]*(knn_dict+knn_men)]*len(context_inputs), dtype=torch.float32).cuda()
             
