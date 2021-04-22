@@ -465,18 +465,18 @@ def main(params):
             positive_embeds = []
             for pos_idx in positive_idxs:
                 if pos_idx < n_entities:
-                    pos_embed = reranker.encode_candidate(entity_dict_vecs[pos_idx:pos_idx + 1].cuda())
+                    pos_embed = reranker.encode_candidate(entity_dict_vecs[pos_idx:pos_idx + 1].cuda(), requires_grad=True)
                 else:
-                    pos_embed = reranker.encode_context(train_men_vecs[pos_idx - n_entities:pos_idx - n_entities + 1].cuda())
+                    pos_embed = reranker.encode_context(train_men_vecs[pos_idx - n_entities:pos_idx - n_entities + 1].cuda(), requires_grad=True)
                 positive_embeds.append(pos_embed)
             positive_embeds = torch.cat(positive_embeds)
             context_inputs = context_inputs.cuda()
             label_inputs = torch.tensor([[1]+[0]*(knn_dict+knn_men)]*len(context_inputs), dtype=torch.float32).cuda()
             
             loss, _ = reranker(context_inputs, label_input=label_inputs, mst_data={
-                'positive_embeds': positive_embeds,
-                'negative_dict_inputs': negative_dict_inputs,
-                'negative_men_inputs': negative_men_inputs
+                'positive_embeds': positive_embeds.cuda(),
+                'negative_dict_inputs': negative_dict_inputs.cuda(),
+                'negative_men_inputs': negative_men_inputs.cuda()
             })
 
             if grad_acc_steps > 1:

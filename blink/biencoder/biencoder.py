@@ -129,22 +129,26 @@ class BiEncoderRanker(torch.nn.Module):
             fp16=self.params.get("fp16"),
         )
  
-    def encode_context(self, ctxt):
+    def encode_context(self, ctxt, requires_grad=False):
         token_idx_ctxt, segment_idx_ctxt, mask_ctxt = to_bert_input(
             ctxt, self.NULL_IDX
         )
         embedding_context, _ = self.model(
             token_idx_ctxt, segment_idx_ctxt, mask_ctxt, None, None, None
         )
+        if requires_grad:
+            return embedding_context
         return embedding_context.cpu().detach()
 
-    def encode_candidate(self, cands):
+    def encode_candidate(self, cands, requires_grad=False):
         token_idx_cands, segment_idx_cands, mask_cands = to_bert_input(
             cands, self.NULL_IDX
         )
         _, embedding_cands = self.model(
             None, None, None, token_idx_cands, segment_idx_cands, mask_cands
         )
+        if requires_grad:
+            return embedding_cands
         return embedding_cands.cpu().detach()
         # TODO: why do we need cpu here?
         # return embedding_cands
@@ -195,10 +199,10 @@ class BiEncoderRanker(torch.nn.Module):
     # If label_input is None, train on in-batch negatives
     def forward(self, context_input, cand_input=None, label_input=None, mst_data=None):
         if mst_data is not None:
-            context_embeds = self.encode_context(context_input).unsqueeze(2) # batchsize x embed_size x 1
-            pos_embeds = mst_data['positive_embeds'].cuda().unsqueeze(1) # batchsize x 1 x embed_size
-            neg_dict_embeds = self.encode_candidate(mst_data['negative_dict_inputs'].cuda()) # (batchsize*knn_dict) x embed_size
-            neg_men_embeds = self.encode_context(mst_data['negative_men_inputs'].cuda()) # (batchsize*knn_men) x embed_size
+            context_embeds = self.encode_context(context_input, requires_grad=True).unsqueeze(2) # batchsize x embed_size x 1
+            pos_embeds = mst_data['positive_embeds'].unsqueeze(1) # batchsize x 1 x embed_size
+            neg_dict_embeds = self.encode_candidate(mst_data['negative_dict_inputs'], requires_grad=True) # (batchsize*knn_dict) x embed_size
+            neg_men_embeds = self.encode_context(mst_data['negative_men_inputs'], requires_grad=True) # (batchsize*knn_men) x embed_size
             neg_dict_embeds = neg_dict_embeds.view(context_embeds.shape[0], neg_dict_embeds.shape[0]//context_embeds.shape[0], neg_dict_embeds.shape[1]) # batchsize x knn_dict x embed_size
             neg_men_embeds = neg_men_embeds.view(context_embeds.shape[0], neg_men_embeds.shape[0]//context_embeds.shape[0], neg_men_embeds.shape[1]) # batchsize x knn_men x embed_size
             
