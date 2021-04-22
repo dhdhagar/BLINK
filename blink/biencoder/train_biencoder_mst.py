@@ -31,6 +31,11 @@ logger = None
 
 def embed_and_index(model, token_id_vecs, encoder_type, batch_size=768, n_gpu=1, only_embed=False, corpus=None):
     def build_index(embeds):
+        if type(embeds) is not np.ndarray:
+            if torch.is_tensor(embeds):
+                embeds = embeds.numpy()
+            else:
+                embeds = np.array(embeds)
         # Build index
         d = embeds.shape[1]
         nembeds = embeds.shape[0]
