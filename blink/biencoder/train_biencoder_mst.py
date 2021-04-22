@@ -446,7 +446,7 @@ def main(params):
                     entity_type = train_processed_data[mention_idxs[i]]['type']
                     train_dict_index = train_dict_indexes[entity_type]
                     train_men_index = train_men_indexes[entity_type]
-                _, knn_dict_idxs = train_dict_index.search(np.expand_dims(m_embed, axis=0), knn_dict + n_gold[i])
+                _, knn_dict_idxs = train_dict_index.search(np.expand_dims(m_embed, axis=0), knn_dict + int(n_gold[i]))
                 knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()
                 _, knn_men_idxs = train_men_index.search(np.expand_dims(m_embed, axis=0), knn_men + len(train_gold_clusters[cluster_ent]))
                 knn_men_idxs = knn_men_idxs.astype(np.int64).flatten()
