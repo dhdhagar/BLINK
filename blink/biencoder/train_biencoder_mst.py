@@ -462,7 +462,7 @@ def main(params):
             
             negative_dict_inputs = torch.tensor(list(map(lambda x: entity_dict_vecs[x].numpy(), negative_dict_inputs))).cuda()
             negative_men_inputs = torch.tensor(list(map(lambda x: train_men_vecs[x].numpy(), negative_men_inputs))).cuda()
-            positive_embeds = None
+            positive_embeds = []
             for pos_idx in positive_idxs:
                 if pos_idx < n_entities:
                     pos_embed = reranker.encode_candidate(entity_dict_vecs[pos_idx:pos_idx + 1].cuda()).squeeze()
