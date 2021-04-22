@@ -21,7 +21,7 @@ def select_field(data, key1, key2=None):
     else:
         return [example[key1][key2] for example in data]
 
-@njit(parallel=True)
+@jit(parallel=True)
 def get_context_representation(
     sample,
     tokenizer,
@@ -67,7 +67,7 @@ def get_context_representation(
         "ids": input_ids,
     }
 
-@njit(parallel=True)
+@jit(parallel=True)
 def get_candidate_representation(
     candidate_desc, 
     tokenizer, 
