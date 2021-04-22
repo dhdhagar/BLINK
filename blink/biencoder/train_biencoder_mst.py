@@ -16,10 +16,9 @@ from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler)
 from pytorch_transformers.optimization import WarmupLinearSchedule
 import faiss
 from tqdm import tqdm, trange
-from numba import jit
 from special_partition.special_partition import cluster_linking_partition
 
-import blink.biencoder.data_process_mst as data_process
+import blink.biencoder.data_process_mult as data_process
 import blink.candidate_ranking.utils as utils
 from blink.biencoder.biencoder import BiEncoderRanker
 from blink.common.optimizer import get_bert_optimizer
@@ -405,7 +404,7 @@ def main(params):
             negative_men_inputs = []
 
             for i, m_embed in enumerate(mention_embeddings):
-                mention_idx = mention_idxs[i]
+                mention_idx = int(mention_idxs[i])
                 gold_idxs = candidate_idxs[i][:n_gold[i]].cpu()
                 cluster_ent = int(gold_idxs[0])
                 # TODO: add multiple-entity support

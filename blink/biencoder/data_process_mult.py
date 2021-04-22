@@ -198,3 +198,13 @@ def process_mention_data(
     tensor_data = TensorDataset(context_vecs, label_idxs, n_labels, mention_idx)
 
     return processed_samples, entity_dictionary, tensor_data
+
+def compute_gold_clusters(mention_data):
+    clusters = {}
+    for men_idx, mention in enumerate(mention_data):
+        for i in range(mention['n_labels']):
+            label_idx = mention['label_idxs'][i]
+            if label_idx not in clusters:
+                clusters[label_idx] = []
+            clusters[label_idx].append(men_idx)
+    return clusters
