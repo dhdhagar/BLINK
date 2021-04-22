@@ -462,7 +462,7 @@ def main(params):
             
             negative_dict_inputs = torch.tensor(list(map(lambda x: entity_dict_vecs[x].numpy(), negative_dict_inputs))).cuda()
             negative_men_inputs = torch.tensor(list(map(lambda x: train_men_vecs[x].numpy(), negative_men_inputs))).cuda()
-            positive_embeds = torch.tensor(list(map(lambda x: reranker.encode_candidate(entity_dict_vecs[x].cuda()) if x < n_entities else reranker.encode_context(train_men_vecs[x - n_entities].cuda()), positive_embeds))).cuda()
+            positive_embeds = torch.tensor(list(map(lambda x: reranker.encode_candidate(entity_dict_vecs[x:x + 1].cuda()) if x < n_entities else reranker.encode_context(train_men_vecs[x - n_entities:x - n_entities + 1].cuda()), positive_embeds))).cuda()
             context_inputs = context_inputs.cuda()
             label_inputs = torch.tensor([[1]+[0]*(knn_dict+knn_men)]*len(context_inputs), dtype=torch.float32).cuda()
             
