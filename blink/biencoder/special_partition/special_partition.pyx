@@ -74,7 +74,8 @@ def special_partition(np.ndarray[INT_t, ndim=1] row,
                       np.ndarray[INT_t, ndim=1] ordered_indices,
                       np.ndarray[INT_t, ndim=1] siamese_indices,
                       INT_t num_entities,
-                      bint directed):
+                      bint directed,
+                      bint silent):
     cdef INT_t num_edges = row.shape[0]
     cdef np.ndarray[BOOL_t, ndim=1] keep_mask = np.ones([num_edges,], dtype=BOOL)
     cdef np.ndarray[INT_t, ndim=1] tmp_graph
@@ -89,7 +90,12 @@ def special_partition(np.ndarray[INT_t, ndim=1] row,
     cdef INT_t max_value = row[len(row) - 1] if directed else col[len(col) - 1] # Last value is max because of sorting
     adj_index = _build_adj_index(row if directed else col, max_value)
 
-    for i in tqdm(ordered_indices, desc='Paritioning joint graph'):
+    if silent:
+        _iter = ordered_indices
+    else:
+        _iter = tqdm(ordered_indices, desc='Paritioning joint graph')
+    
+    for i in _iter:
         # Undirected: Skip iteration if the edge has already been dropped
         if keep_mask[i] == False:
             continue
@@ -132,7 +138,7 @@ def special_partition(np.ndarray[INT_t, ndim=1] row,
 
     return keep_mask
 
-def cluster_linking_partition(rows, cols, data, n_entities, directed=True):
+def cluster_linking_partition(rows, cols, data, n_entities, directed=True, silent=False):
     assert rows.shape[0] == cols.shape[0] == data.shape[0]
     
     cdef np.ndarray[BOOL_t, ndim=1] keep_edge_mask
@@ -175,7 +181,7 @@ def cluster_linking_partition(rows, cols, data, n_entities, directed=True):
 
     # Determine which edges to keep in the partitioned graph
     keep_edge_mask = special_partition(
-        rows, cols, ordered_edge_idxs, siamese_idxs, n_entities, directed)
+        rows, cols, ordered_edge_idxs, siamese_idxs, n_entities, directed, silent)
 
     # Return the edges of the partitioned graph
     return rows[keep_edge_mask], cols[keep_edge_mask], data[keep_edge_mask]

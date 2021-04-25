@@ -386,24 +386,28 @@ def main(params):
             
             # context_inputs: Shape: batch x token_len
             candidate_inputs = np.array([], dtype=np.long) # Shape: (batch*knn) x token_len
-            label_inputs = (candidate_idxs >= 0).type(torch.float32) # Shape: batch x knn
+            label_inputs = torch.tensor([[1]+[0]*(knn-1)]*n_gold.sum(), dtype=torch.float32) # Shape: batch(with split rows) x knn
+            context_inputs_split = torch.zeros((label_inputs.size(0), context_inputs.size(1)), dtype=torch.long) # Shape: batch(with split rows) x token_len
+            # label_inputs = (candidate_idxs >= 0).type(torch.float32) # Shape: batch x knn
 
             for i, m_embed in enumerate(mention_embeddings):
                 if use_types:
                     entity_type = train_processed_data[mention_idxs[i]]['type']
                     train_dict_index = train_dict_indexes[entity_type]
-                _, knn_dict_idxs = train_dict_index.search(np.expand_dims(m_embed, axis=0), knn)
+                _, knn_dict_idxs = train_dict_index.search(np.expand_dims(m_embed, axis=0), (knn + n_gold - 1)) # Fetch NNs to ensure one entity per row
                 knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()
                 if use_types:
                     # Map type-specific indices to the entire dictionary
                     knn_dict_idxs = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], knn_dict_idxs)), dtype=np.int64)
                 gold_idxs = candidate_idxs[i][:n_gold[i]].cpu()
-                candidate_inputs = np.concatenate((candidate_inputs, np.concatenate((gold_idxs, knn_dict_idxs[~np.isin(knn_dict_idxs, gold_idxs)]))[:knn]))
+                for ng, gold_idx in enumerate(gold_idxs):
+                    context_inputs_split[i+ng] = context_inputs[i]
+                    candidate_inputs = np.concatenate((candidate_inputs, np.concatenate(([gold_idx], knn_dict_idxs[~np.isin(knn_dict_idxs, gold_idxs)]))[:knn]))
             candidate_inputs = torch.tensor(list(map(lambda x: entity_dict_vecs[x].numpy(), candidate_inputs))).cuda()
-            context_inputs = context_inputs.cuda()
+            context_inputs_split = context_inputs_split.cuda()
             label_inputs = label_inputs.cuda()
             
-            loss, _ = reranker(context_inputs, candidate_inputs, label_inputs)
+            loss, _ = reranker(context_inputs_split, candidate_inputs, label_inputs)
 
             if grad_acc_steps > 1:
                 loss = loss / grad_acc_steps

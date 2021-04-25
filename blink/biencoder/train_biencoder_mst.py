@@ -434,7 +434,7 @@ def main(params):
                             cols += [to_node, from_node]
                             data += [score, score]
                     # Find MST with entity constraint
-                    rows, cols, data = cluster_linking_partition(np.array(rows), np.array(cols), np.array(data), n_entities, True)
+                    rows, cols, data = cluster_linking_partition(np.array(rows), np.array(cols), np.array(data), n_entities, directed=True, silent=True)
                     for i in range(len(rows)):
                         gold_links[rows[i] - n_entities] = cols[i]
                     gold_link_idx = gold_links[mention_idx]
