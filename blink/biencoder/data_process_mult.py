@@ -6,6 +6,7 @@
 #
 
 import torch
+import numpy as np
 from tqdm import tqdm
 from torch.utils.data import TensorDataset
 from blink.biencoder.zeshel_utils import world_to_id
