@@ -410,7 +410,7 @@ def main(params):
 
             for i, m_embed in enumerate(mention_embeddings):
                 mention_idx = int(mention_idxs[i])
-                gold_idxs = set(candidate_idxs[i][:n_gold[i]].cpu())
+                gold_idxs = set(train_processed_data[mention_idx]['label_idxs'][:n_gold[i]])
                 if mention_idx in gold_links:
                     gold_link_idx = gold_links[mention_idx]
                 else:
@@ -418,7 +418,6 @@ def main(params):
                     rows, cols, data, shape = [], [], [], (n_entities+n_mentions, n_entities+n_mentions)
                     gold_cluster_mentions = []
                     for cluster_ent in gold_idxs:
-                        cluster_ent = int(cluster_ent)
                         cluster_mens = train_gold_clusters[cluster_ent]
                         gold_cluster_mentions += cluster_mens
                         for i in range(len(cluster_mens)):
