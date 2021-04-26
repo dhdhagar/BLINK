@@ -18,105 +18,12 @@ from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 from special_partition.special_partition import cluster_linking_partition
 from collections import defaultdict
-import blink.biencoder.data_process_mult as data
+import blink.biencoder.data_process_mult as data_process
 import blink.candidate_ranking.utils as utils
 from blink.common.params import BlinkParser
 from blink.biencoder.biencoder import BiEncoderRanker
 
 from IPython import embed
-
-
-def embed_and_index(model,
-                    token_id_vecs,
-                    encoder_type,
-                    batch_size=768,
-                    n_gpu=1,
-                    only_embed=False,
-                    dictionary=None):
-    """
-    Parameters
-    ----------
-    model : BiEncoderRanker
-        trained biencoder model
-    token_id_vecs : ndarray
-        list of token id vectors to embed and index
-    encoder_type : str
-        "context" or "candidate"
-    batch_size : int
-        per-gpu batch size for the data loader
-    n_gpu : int
-        number of GPUs being used
-    only_embed : bool
-        compute and return only the embeddings
-    dictionary : array
-        list of mentions/entities along with metadata
-
-    Returns
-    -------
-    embeds : ndarray
-        matrix of embeddings
-    index : faiss
-        faiss index of the embeddings
-    """
-    def build_index(embeds):
-        # Build index
-        d = embeds.shape[1]
-        nembeds = embeds.shape[0]
-        if nembeds < 10000:  # if the number of embeddings is small, don't approximate
-            index = faiss.IndexFlatIP(d)
-            index.add(embeds)
-        else:
-            # number of quantized cells
-            nlist = int(math.floor(math.sqrt(nembeds)))
-            # number of the quantized cells to probe
-            nprobe = int(math.floor(math.sqrt(nlist)))
-            quantizer = faiss.IndexFlatIP(d)
-            index = faiss.IndexIVFFlat(
-                quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
-            )
-            index.train(embeds)
-            index.add(embeds)
-            index.nprobe = nprobe
-        return index
-    
-    if encoder_type == 'context':
-        encoder = model.encode_context
-    elif encoder_type == 'candidate':
-        encoder = model.encode_candidate
-    else:
-        raise ValueError("Invalid encoder_type: expected context or candidate")
-
-    # Compute embeddings
-    embeds = None
-    sampler = SequentialSampler(token_id_vecs)
-    dataloader = DataLoader(
-        token_id_vecs, sampler=sampler, batch_size=32
-    )
-    iter_ = tqdm(dataloader, desc="Embedding")
-    for step, batch in enumerate(iter_):
-        batch_embeds = encoder(batch.cuda())
-        embeds = batch_embeds if embeds is None else np.concatenate((embeds, batch_embeds), axis=0)
-
-    if only_embed:
-        return embeds
-
-    if dictionary is None:
-        # When "use_types" is False
-        index = build_index(embeds)
-        return embeds, index
-
-    # Build type-specific search indexes
-    search_indexes = {}
-    dictionary_idxs = {}
-    for i,e in enumerate(dictionary):
-        ent_type = e['type']
-        if ent_type not in dictionary_idxs:
-            dictionary_idxs[ent_type] = []
-        dictionary_idxs[ent_type].append(i)
-    for ent_type in dictionary_idxs:
-        search_indexes[ent_type] = build_index(embeds[dictionary_idxs[ent_type]])
-        dictionary_idxs[ent_type] = np.array(dictionary_idxs[ent_type])
-    return embeds, search_indexes, dictionary_idxs
 
 
 def get_query_nn(model,
@@ -367,7 +274,7 @@ def main(params):
             test_samples = list(filter(lambda sample: (len(sample["labels"]) > 0) if mult_labels else (sample["label"] is not None), test_samples))
         logger.info("Read %d test samples." % len(test_samples))
 
-        mention_data, test_dictionary, test_tensor_data = data.process_mention_data(
+        mention_data, test_dictionary, test_tensor_data = data_process.process_mention_data(
             test_samples,
             test_dictionary,
             tokenizer,
@@ -427,15 +334,15 @@ def main(params):
 
         if use_types:
             print("Dictionary: Embedding and building index")
-            dict_embeds, dict_indexes, dict_idxs_by_type = embed_and_index(reranker, test_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, dictionary=test_dictionary)
+            dict_embeds, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, test_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=test_dictionary)
             print("Queries: Embedding and building index")
-            men_embeds, men_indexes, men_idxs_by_type = embed_and_index(reranker, test_men_vecs, encoder_type="context", n_gpu=n_gpu, dictionary=mention_data)
+            men_embeds, men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, test_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=mention_data)
         else:
             print("Dictionary: Embedding and building index")
-            dict_embeds, dict_index = embed_and_index(
+            dict_embeds, dict_index = data_process.embed_and_index(
                 reranker, test_dict_vecs, 'candidate', n_gpu=n_gpu)
             print("Queries: Embedding and building index")
-            men_embeds, men_index = embed_and_index(
+            men_embeds, men_index = data_process.embed_and_index(
                 reranker, test_men_vecs, 'context', n_gpu=n_gpu)
 
         recall_accuracy = {2**i: 0 for i in range(int(math.log(params['recall_k'], 2)) + 1)}

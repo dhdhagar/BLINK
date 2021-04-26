@@ -208,3 +208,70 @@ def compute_gold_clusters(mention_data):
                 clusters[label_idx] = []
             clusters[label_idx].append(men_idx)
     return clusters
+
+def embed_and_index(model, token_id_vecs, encoder_type, batch_size=768, n_gpu=1, only_embed=False, corpus=None):
+    def build_index(embeds):
+        if type(embeds) is not np.ndarray:
+            if torch.is_tensor(embeds):
+                embeds = embeds.numpy()
+            else:
+                embeds = np.array(embeds)
+        # Build index
+        d = embeds.shape[1]
+        nembeds = embeds.shape[0]
+        if nembeds < 10000:  # if the number of embeddings is small, don't approximate
+            index = faiss.IndexFlatIP(d)
+            index.add(embeds)
+        else:
+            # number of quantized cells
+            nlist = int(math.floor(math.sqrt(nembeds)))
+            # number of the quantized cells to probe
+            nprobe = int(math.floor(math.sqrt(nlist)))
+            quantizer = faiss.IndexFlatIP(d)
+            index = faiss.IndexIVFFlat(
+                quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
+            )
+            index.train(embeds)
+            index.add(embeds)
+            index.nprobe = nprobe
+        return index
+    
+    with torch.no_grad():
+        if encoder_type == 'context':
+            encoder = model.encode_context
+        elif encoder_type == 'candidate':
+            encoder = model.encode_candidate
+        else:
+            raise ValueError("Invalid encoder_type: expected context or candidate")
+
+        # Compute embeddings
+        embeds = None
+        sampler = SequentialSampler(token_id_vecs)
+        dataloader = DataLoader(
+            token_id_vecs, sampler=sampler, batch_size=(batch_size * n_gpu)
+        )
+        iter_ = tqdm(dataloader, desc="Embedding in batches")
+        for step, batch in enumerate(iter_):
+            batch_embeds = encoder(batch.cuda())
+            embeds = batch_embeds if embeds is None else np.concatenate((embeds, batch_embeds), axis=0)
+
+        if only_embed:
+            return embeds
+
+        if corpus is None:
+            # When "use_types" is False
+            index = build_index(embeds)
+            return embeds, index
+        
+        # Build type-specific search indexes
+        search_indexes = {}
+        corpus_idxs = {}
+        for i,e in enumerate(corpus):
+            ent_type = e['type']
+            if ent_type not in corpus_idxs:
+                corpus_idxs[ent_type] = []
+            corpus_idxs[ent_type].append(i)
+        for ent_type in corpus_idxs:
+            search_indexes[ent_type] = build_index(embeds[corpus_idxs[ent_type]])
+            corpus_idxs[ent_type] = np.array(corpus_idxs[ent_type])
+        return embeds, search_indexes, corpus_idxs

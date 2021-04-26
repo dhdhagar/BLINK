@@ -19,6 +19,7 @@ from tqdm import tqdm, trange
 from special_partition.special_partition import cluster_linking_partition
 
 import blink.biencoder.data_process_mult as data_process
+import blink.biencoder.eval_cluster_linking as eval_cluster_linking
 import blink.candidate_ranking.utils as utils
 from blink.biencoder.biencoder import BiEncoderRanker
 from blink.common.optimizer import get_bert_optimizer
@@ -29,135 +30,88 @@ from IPython import embed
 
 logger = None
 
-def embed_and_index(model, token_id_vecs, encoder_type, batch_size=768, n_gpu=1, only_embed=False, corpus=None):
-    def build_index(embeds):
-        if type(embeds) is not np.ndarray:
-            if torch.is_tensor(embeds):
-                embeds = embeds.numpy()
-            else:
-                embeds = np.array(embeds)
-        # Build index
-        d = embeds.shape[1]
-        nembeds = embeds.shape[0]
-        if nembeds < 10000:  # if the number of embeddings is small, don't approximate
-            index = faiss.IndexFlatIP(d)
-            index.add(embeds)
-        else:
-            # number of quantized cells
-            nlist = int(math.floor(math.sqrt(nembeds)))
-            # number of the quantized cells to probe
-            nprobe = int(math.floor(math.sqrt(nlist)))
-            quantizer = faiss.IndexFlatIP(d)
-            index = faiss.IndexIVFFlat(
-                quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
-            )
-            index.train(embeds)
-            index.add(embeds)
-            index.nprobe = nprobe
-        return index
-    
-    with torch.no_grad():
-        if encoder_type == 'context':
-            encoder = model.encode_context
-        elif encoder_type == 'candidate':
-            encoder = model.encode_candidate
-        else:
-            raise ValueError("Invalid encoder_type: expected context or candidate")
-
-        # Compute embeddings
-        embeds = None
-        sampler = SequentialSampler(token_id_vecs)
-        dataloader = DataLoader(
-            token_id_vecs, sampler=sampler, batch_size=(batch_size * n_gpu)
-        )
-        iter_ = tqdm(dataloader, desc="Embedding in batches")
-        for step, batch in enumerate(iter_):
-            batch_embeds = encoder(batch.cuda())
-            embeds = batch_embeds if embeds is None else np.concatenate((embeds, batch_embeds), axis=0)
-
-        if only_embed:
-            return embeds
-
-        if corpus is None:
-            # When "use_types" is False
-            index = build_index(embeds)
-            return embeds, index
-        
-        # Build type-specific search indexes
-        search_indexes = {}
-        corpus_idxs = {}
-        for i,e in enumerate(corpus):
-            ent_type = e['type']
-            if ent_type not in corpus_idxs:
-                corpus_idxs[ent_type] = []
-            corpus_idxs[ent_type].append(i)
-        for ent_type in corpus_idxs:
-            search_indexes[ent_type] = build_index(embeds[corpus_idxs[ent_type]])
-        return embeds, search_indexes, corpus_idxs
-
-# The evaluate function makes a prediction on a set of knn candidates for every mention
-def evaluate(
-    reranker, eval_dataloader, valid_dict_vecs, params, device, logger, knn, n_gpu, type_data=None
-):  
+def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_gpu, silent=False, type_data=None):
     reranker.model.eval()
-    
     use_types = type_data is not None # Should be a dict containing "entity_dictionary" and "mention_data"
-    
-    # To accomodate the approximate-nature of the knn procedure, retrieve more samples and then filter down
-    knn = max(16, 2*knn)
-    if params["silent"]:
-        iter_ = eval_dataloader
-    else:
-        iter_ = tqdm(eval_dataloader, desc="Evaluation")
-    results = {}
-    eval_accuracy = 0.0
-    nb_eval_examples = 0
-    nb_eval_steps = 0
+    n_entities = len(valid_dict_vecs)
+    n_mentions = len(valid_men_vecs)
+    joint_graphs = {}
+    max_knn = 4
+    for k in [0, 1, 2, 4]:
+        joint_graphs[k] = {
+            'rows': np.array([]),
+            'cols': np.array([]),
+            'data': np.array([]),
+            'shape': (n_entities+n_mentions, n_entities+n_mentions)
+        }
 
-    if not use_types:
-        valid_dict_embeddings, valid_dict_index = embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu)
+    if use_types:
+        print("Eval: Dictionary: Embedding and building index")
+        dict_embeds, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=type_data['entity_dictionary'])
+        print("Eval: Queries: Embedding and building index")
+        men_embeds, men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, valid_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=type_data['mention_data'])
     else:
-        valid_dict_embeddings, valid_dict_indexes, dict_idxs_by_type = embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=type_data['entity_dictionary'])
+        print("Eval: Dictionary: Embedding and building index")
+        dict_embeds, dict_index = data_process.embed_and_index(
+            reranker, valid_dict_vecs, 'candidate', n_gpu=n_gpu)
+        print("Eval: Queries: Embedding and building index")
+        men_embeds, men_index = data_process.embed_and_index(
+            reranker, valid_men_vecs, 'context', n_gpu=n_gpu)
 
-    for step, batch in enumerate(iter_):
-        batch = tuple(t.to(device) for t in batch)
-        context_inputs, candidate_idxs, n_gold, mention_idxs = batch
+    for men_query_idx, men_embed in enumerate(tqdm(men_embeds, total=len(men_embeds), desc="Eval: Fetching k-NN")):
+        men_embed = np.expand_dims(men_embed, axis=0)
         
-        with torch.no_grad():
-            mention_embeddings = reranker.encode_context(context_inputs)
-            
-            # context_inputs: Shape: batch x token_len
-            candidate_inputs = np.array([], dtype=np.long) # Shape: (batch*knn) x token_len
-            label_inputs = torch.zeros((context_inputs.shape[0], knn), dtype=torch.float32) # Shape: batch x knn
+        dict_type_idx_mapping, men_type_idx_mapping = None, None
+        if use_types:
+            entity_type = type_data['mention_data'][men_query_idx]['type']
+            dict_index = dict_indexes[entity_type]
+            men_index = men_indexes[entity_type]
+            dict_type_idx_mapping = dict_idxs_by_type[entity_type]
+            men_type_idx_mapping = men_idxs_by_type[entity_type]
+        
+        # Fetch nearest entity candidate
+        gold_idxs = type_data['mention_data'][men_query_idx]["label_idxs"][:type_data['mention_data'][men_query_idx]["n_labels"]]
+        dict_cand_idx, dict_cand_score = eval_cluster_linking.get_query_nn(
+            reranker, 1, dict_embeds, dict_index, men_embed, type_idx_mapping=dict_type_idx_mapping)
+        # Fetch (k+1) NN mention candidates
+        men_cand_idxs, men_cand_scores = eval_cluster_linking.get_query_nn(
+            reranker, max_knn + 1, men_embeds, men_index, men_embed, type_idx_mapping=men_type_idx_mapping)
+        # Filter candidates to remove mention query and keep only the top k candidates
+        filter_mask = men_cand_idxs != men_query_idx
+        men_cand_idxs, men_cand_scores = men_cand_idxs[filter_mask][:max_knn], men_cand_scores[filter_mask][:max_knn]
 
-            for i, m_embed in enumerate(mention_embeddings):
-                if use_types:
-                    entity_type = type_data['mention_data'][mention_idxs[i]]['type']
-                    valid_dict_index = valid_dict_indexes[entity_type]
-                _, knn_dict_idxs = valid_dict_index.search(np.expand_dims(m_embed, axis=0), knn)
-                knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()
-                if use_types:
-                    # Map type-specific indices to the entire dictionary
-                    knn_dict_idxs = list(map(lambda x: dict_idxs_by_type[entity_type][x], knn_dict_idxs))
-                gold_idxs = candidate_idxs[i][:n_gold[i]].cpu()
-                candidate_inputs = np.concatenate((candidate_inputs, knn_dict_idxs))
-                label_inputs[i] = torch.tensor([1 if nn in gold_idxs else 0 for nn in knn_dict_idxs])
-            candidate_inputs = torch.tensor(list(map(lambda x: valid_dict_vecs[x].numpy(), candidate_inputs))).cuda()
-            context_inputs = context_inputs.cuda()
-            label_inputs = label_inputs.cuda()
-            
-            _, logits = reranker(context_inputs, candidate_inputs, label_inputs)
-
-        logits = logits.detach().cpu().numpy()
-        tmp_eval_accuracy = int(torch.sum(label_inputs[np.arange(label_inputs.shape[0]), np.argmax(logits, axis=1)] == 1))
-        eval_accuracy += tmp_eval_accuracy
-        nb_eval_examples += context_inputs.size(0)
-        nb_eval_steps += 1
-
-    normalized_eval_accuracy = eval_accuracy / nb_eval_examples
-    logger.info("Eval accuracy: %.5f" % normalized_eval_accuracy)
-    results["normalized_accuracy"] = normalized_eval_accuracy
-    return results
+        # Add edges to the graphs
+        for k in joint_graphs:
+            joint_graph = joint_graphs[k]
+            # Add mention-entity edge
+            joint_graph['rows'] = np.append(
+                joint_graph['rows'], [n_entities+men_query_idx])  # Mentions added at an offset of maximum entities
+            joint_graph['cols'] = np.append(
+                joint_graph['cols'], dict_cand_idx)
+            joint_graph['data'] = np.append(
+                joint_graph['data'], dict_cand_score)
+            if k > 0:
+                # Add mention-mention edges
+                joint_graph['rows'] = np.append(
+                    joint_graph['rows'], [n_entities+men_query_idx]*len(men_cand_idxs[:k]))
+                joint_graph['cols'] = np.append(
+                    joint_graph['cols'], n_entities+men_cand_idxs[:k])
+                joint_graph['data'] = np.append(
+                    joint_graph['data'], men_cand_scores[:k])
+    
+    max_eval_acc = -1.
+    for k in joint_graphs:
+        print(f"\nGraph (k={k}):")
+        # Partition graph based on cluster-linking constraints
+        partitioned_graph, clusters = eval_cluster_linking.partition_graph(
+            joint_graphs[k], n_entities, directed_graph, return_clusters=True)
+        # Infer predictions from clusters
+        result = eval_cluster_linking.analyzeClusters(clusters, type_data['entity_dictionary'], type_data['mention_data'], k)
+        acc = float(result['accuracy'].split(' ')[0])
+        max_eval_acc = max(acc, max_eval_acc)
+        logger.info(f"Eval accuracy for graph@k={k}: {acc}%")
+    logger.info(f"Best eval accuracy: {max_eval_acc}%")
+    return max_eval_acc
 
 def get_optimizer(model, params):
     return get_bert_optimizer(
@@ -280,11 +234,6 @@ def main(params):
                 pickle.dump(train_processed_data, write_handle,
                             protocol=pickle.HIGHEST_PROTOCOL)
 
-        # Store the entity dictionary vectors
-        entity_dict_vecs = torch.tensor(list(map(lambda x: x['ids'], entity_dictionary)), dtype=torch.long)
-        # Store the query mention vectors
-        train_men_vecs = train_tensor_data[:][0]
-
         if params["shuffle"]:
             train_sampler = RandomSampler(train_tensor_data)
         else:
@@ -293,6 +242,11 @@ def main(params):
         train_dataloader = DataLoader(
             train_tensor_data, sampler=train_sampler, batch_size=train_batch_size
         )
+    
+    # Store the entity dictionary vectors
+    entity_dict_vecs = torch.tensor(list(map(lambda x: x['ids'], entity_dictionary)), dtype=torch.long)
+    # Store the query mention vectors
+    train_men_vecs = train_tensor_data[:][0]
 
     # Load eval data
     valid_tensor_data_pkl_path = os.path.join(model_output_path, 'valid_tensor_data.pickle')
@@ -333,10 +287,8 @@ def main(params):
                 pickle.dump(valid_processed_data, write_handle,
                             protocol=pickle.HIGHEST_PROTOCOL)
 
-    valid_sampler = SequentialSampler(valid_tensor_data)
-    valid_dataloader = DataLoader(
-        valid_tensor_data, sampler=valid_sampler, batch_size=eval_batch_size
-    )
+    # Store the query mention vectors
+    valid_men_vecs = valid_tensor_data[:][0]
 
     evaluate_type_data = {
         'entity_dictionary': entity_dictionary,
@@ -344,10 +296,8 @@ def main(params):
     } if use_types else None
 
     if params["only_evaluate"]:
-        # Get the entity dictionary vectors
-        entity_dict_vecs = torch.tensor(list(map(lambda x: x['ids'], entity_dictionary)), dtype=torch.long)
         evaluate(
-            reranker, valid_dataloader, entity_dict_vecs, params, device=device, logger=logger, knn=knn, n_gpu=n_gpu, type_data=evaluate_type_data
+            reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, silent=params["silent"], type_data=evaluate_type_data
         )
         exit()
 
@@ -366,7 +316,6 @@ def main(params):
     )
 
     # Set model to training mode
-    model.train()
     optimizer = get_optimizer(model, params)
     scheduler = get_scheduler(params, optimizer, len(train_tensor_data), logger)
     best_epoch_idx = -1
@@ -374,17 +323,18 @@ def main(params):
     num_train_epochs = params["num_train_epochs"]
     
     for epoch_idx in trange(int(num_train_epochs), desc="Epoch"):
+        model.train()
         torch.cuda.empty_cache()
         tr_loss = 0
         results = None
 
         # Compute mention and entity embeddings at the start of each epoch
         if use_types:
-            train_dict_embeddings, train_dict_indexes, dict_idxs_by_type = embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_dictionary)
-            train_men_embeddings, train_men_indexes, men_idxs_by_type = embed_and_index(reranker, train_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=train_processed_data)
+            train_dict_embeddings, train_dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_dictionary)
+            train_men_embeddings, train_men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, train_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=train_processed_data)
         else:
-            train_dict_embeddings, train_dict_index = embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu)
-            train_men_embeddings, train_men_index = embed_and_index(reranker, train_men_vecs, encoder_type="context", n_gpu=n_gpu)
+            train_dict_embeddings, train_dict_index = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu)
+            train_men_embeddings, train_men_index = data_process.embed_and_index(reranker, train_men_vecs, encoder_type="context", n_gpu=n_gpu)
 
         if params["silent"]:
             iter_ = train_dataloader
@@ -519,7 +469,7 @@ def main(params):
             if (step + 1) % (params["eval_interval"] * grad_acc_steps) == 0:
                 logger.info("Evaluation on the development dataset")
                 evaluate(
-                    reranker, valid_dataloader, entity_dict_vecs, params, device=device, logger=logger, knn=knn, n_gpu=n_gpu, type_data=evaluate_type_data
+                    reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, silent=params["silent"], type_data=evaluate_type_data
                 )
                 model.train()
                 logger.info("\n")
@@ -531,11 +481,11 @@ def main(params):
         utils.save_model(model, tokenizer, epoch_output_folder_path)
         logger.info(f"Model saved at {epoch_output_folder_path}")
 
-        results = evaluate(
-            reranker, valid_dataloader, entity_dict_vecs, params, device=device, logger=logger, knn=knn, n_gpu=n_gpu, type_data=evaluate_type_data
+        eval_accuracy = evaluate(
+            reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, silent=params["silent"], type_data=evaluate_type_data
         )
 
-        ls = [best_score, results["normalized_accuracy"]]
+        ls = [best_score, eval_accuracy]
         li = [best_epoch_idx, epoch_idx]
 
         best_score = ls[np.argmax(ls)]
