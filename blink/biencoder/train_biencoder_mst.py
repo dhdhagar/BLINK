@@ -410,47 +410,58 @@ def main(params):
 
             for i, m_embed in enumerate(mention_embeddings):
                 mention_idx = int(mention_idxs[i])
-                gold_idxs = candidate_idxs[i][:n_gold[i]].cpu()
-                cluster_ent = int(gold_idxs[0])
-                # TODO: add multiple-entity support
+                gold_idxs = set(candidate_idxs[i][:n_gold[i]].cpu())
                 if mention_idx in gold_links:
                     gold_link_idx = gold_links[mention_idx]
                 else:
-                    # Run MST on gold entity's mention cluster to find positive edge for the query mention
-                    cluster_mens = train_gold_clusters[cluster_ent]
+                    # Run MST on mention clusters of all the gold entities of the current query mention to find its positive edge
                     rows, cols, data, shape = [], [], [], (n_entities+n_mentions, n_entities+n_mentions)
-                    for i in range(len(cluster_mens)):
-                        from_node = n_entities + cluster_mens[i]
-                        to_node = cluster_ent
-                        # Add mention-entity link
-                        rows.append(from_node)
-                        cols.append(to_node)
-                        data.append(train_men_embeddings[from_node - n_entities] @ train_dict_embeddings[to_node])
-                        # Add forward and reverse mention-mention links
-                        for j in range(i+1, len(cluster_mens)):
-                            to_node = n_entities + cluster_mens[j]
-                            score = train_men_embeddings[from_node - n_entities] @ train_men_embeddings[to_node - n_entities]
-                            rows += [from_node, to_node]
-                            cols += [to_node, from_node]
-                            data += [score, score]
+                    gold_cluster_mentions = []
+                    for cluster_ent in gold_idxs:
+                        cluster_ent = int(cluster_ent)
+                        cluster_mens = train_gold_clusters[cluster_ent]
+                        gold_cluster_mentions += cluster_mens
+                        for i in range(len(cluster_mens)):
+                            from_node = n_entities + cluster_mens[i]
+                            to_node = cluster_ent
+                            # Add mention-entity link
+                            rows.append(from_node)
+                            cols.append(to_node)
+                            data.append(train_men_embeddings[from_node - n_entities] @ train_dict_embeddings[to_node])
+                            # Add forward and reverse mention-mention links
+                            for j in range(i+1, len(cluster_mens)):
+                                to_node = n_entities + cluster_mens[j]
+                                score = train_men_embeddings[from_node - n_entities] @ train_men_embeddings[to_node - n_entities]
+                                rows += [from_node, to_node]
+                                cols += [to_node, from_node]
+                                data += [score, score]
+                    gold_cluster_mentions = set(gold_cluster_mentions)
                     # Find MST with entity constraint
                     rows, cols, data = cluster_linking_partition(np.array(rows), np.array(cols), np.array(data), n_entities, directed=True, silent=True)
-                    assert len(cluster_mens) == len(rows)
+                    assert len(gold_cluster_mentions) == len(rows)
+                    # Store the computed positive edges for the mentions in the clusters if they have the same gold entities as the query mention
                     for i in range(len(rows)):
-                        assert (rows[i] - n_entities) >= 0
-                        gold_links[rows[i] - n_entities] = cols[i]
+                        men_idx = rows[i] - n_entities
+                        assert men_idx >= 0
+                        add_link = True
+                        for l in train_processed_data[men_idx]['label_idxs'][:train_processed_data[men_idx]['n_labels']]:
+                            if l not in gold_idxs:
+                                add_link = False
+                                break
+                        if add_link:
+                            gold_links[rows[i] - n_entities] = cols[i]
                     gold_link_idx = gold_links[mention_idx]
                     
                 # Calculate the number of negative entities and mentions to fetch
-                knn_dict = knn//2 # knn//2 - (1 if gold_link_idx < n_entities else 0) # All entities precede mentions
-                knn_men = knn - knn_dict # knn - (knn_dict + 1)
+                knn_dict = knn//2
+                knn_men = knn - knn_dict
                 if use_types:
                     entity_type = train_processed_data[mention_idxs[i]]['type']
                     train_dict_index = train_dict_indexes[entity_type]
                     train_men_index = train_men_indexes[entity_type]
                 _, knn_dict_idxs = train_dict_index.search(np.expand_dims(m_embed, axis=0), knn_dict + int(n_gold[i]))
                 knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()
-                _, knn_men_idxs = train_men_index.search(np.expand_dims(m_embed, axis=0), knn_men + len(train_gold_clusters[cluster_ent]))
+                _, knn_men_idxs = train_men_index.search(np.expand_dims(m_embed, axis=0), knn_men + sum([len(train_gold_clusters[gi]) for gi in gold_idxs]))
                 knn_men_idxs = knn_men_idxs.astype(np.int64).flatten()
                 if use_types:
                     # Map type-specific indices back to the entire list
@@ -459,8 +470,8 @@ def main(params):
                 # Add the positive example
                 positive_idxs.append(gold_link_idx)
                 # Add the negative examples
-                negative_dict_inputs += list(knn_dict_idxs[~np.isin(knn_dict_idxs, gold_idxs)][:knn_dict])
-                negative_men_inputs += list(knn_men_idxs[~np.isin(knn_men_idxs, train_gold_clusters[cluster_ent])][:knn_men])
+                negative_dict_inputs += list(knn_dict_idxs[~np.isin(knn_dict_idxs, list(gold_idxs))][:knn_dict])
+                negative_men_inputs += list(knn_men_idxs[~np.isin(knn_men_idxs, list(gold_cluster_mentions))][:knn_men])
             
             negative_dict_inputs = torch.tensor(list(map(lambda x: entity_dict_vecs[x].numpy(), negative_dict_inputs)))
             negative_men_inputs = torch.tensor(list(map(lambda x: train_men_vecs[x].numpy(), negative_men_inputs)))
