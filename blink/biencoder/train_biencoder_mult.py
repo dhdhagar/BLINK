@@ -8,13 +8,10 @@ import os
 import random
 import time
 import pickle
-import math
-
 import numpy as np
 import torch
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler)
 from pytorch_transformers.optimization import WarmupLinearSchedule
-import faiss
 from tqdm import tqdm, trange
 
 import blink.biencoder.data_process_mult as data_process
