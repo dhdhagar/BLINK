@@ -285,6 +285,9 @@ def main(params):
                 pickle.dump(train_processed_data, write_handle,
                             protocol=pickle.HIGHEST_PROTOCOL)
 
+        # Store the query mention vectors
+        train_men_vecs = train_tensor_data[:][0]
+
         if params["shuffle"]:
             train_sampler = RandomSampler(train_tensor_data)
         else:
@@ -296,8 +299,6 @@ def main(params):
     
     # Store the entity dictionary vectors
     entity_dict_vecs = torch.tensor(list(map(lambda x: x['ids'], entity_dictionary)), dtype=torch.long)
-    # Store the query mention vectors
-    train_men_vecs = train_tensor_data[:][0]
 
     # Load eval data
     valid_tensor_data_pkl_path = os.path.join(model_output_path, 'valid_tensor_data.pickle')
