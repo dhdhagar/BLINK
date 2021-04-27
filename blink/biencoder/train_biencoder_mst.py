@@ -101,7 +101,7 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
         print(f"\nGraph (k={k}):")
         # Partition graph based on cluster-linking constraints
         partitioned_graph, clusters = eval_cluster_linking.partition_graph(
-            joint_graphs[k], n_entities, directed_graph, return_clusters=True)
+            joint_graphs[k], n_entities, directed=True, return_clusters=True)
         # Infer predictions from clusters
         result = eval_cluster_linking.analyzeClusters(clusters, type_data['entity_dictionary'], type_data['mention_data'], k)
         acc = float(result['accuracy'].split(' ')[0])
@@ -233,7 +233,7 @@ def main(params):
 
         # Store the query mention vectors
         train_men_vecs = train_tensor_data[:][0]
-        
+
         if params["shuffle"]:
             train_sampler = RandomSampler(train_tensor_data)
         else:
