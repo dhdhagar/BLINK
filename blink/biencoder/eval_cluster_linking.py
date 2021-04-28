@@ -440,6 +440,14 @@ def main(params):
         'n_mentions': results[0]['n_mentions'],
         'directed': directed_graph
     }
+
+    try:
+        for recall_k in recall_accuracy:
+            recall_accuracy[recall_k] /= n_mentions
+            result_overview[f'recall@{recall_k}'] = recall_accuracy[recall_k]
+    except:
+        logger.info("Recall data not available since graphs were loaded from disk")
+    
     for r in results:
         k = r['knn_mentions']
         result_overview[f'accuracy@knn{k}'] = r['accuracy']
