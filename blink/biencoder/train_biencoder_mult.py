@@ -66,7 +66,6 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
             men_type_idx_mapping = men_idxs_by_type[entity_type]
         
         # Fetch nearest entity candidate
-        gold_idxs = type_data['mention_data'][men_query_idx]["label_idxs"][:type_data['mention_data'][men_query_idx]["n_labels"]]
         dict_cand_idx, dict_cand_score = eval_cluster_linking.get_query_nn(
             reranker, 1, dict_embeds, dict_index, men_embed, type_idx_mapping=dict_type_idx_mapping)
         # Fetch (k+1) NN mention candidates
