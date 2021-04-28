@@ -197,7 +197,7 @@ class BiEncoderRanker(torch.nn.Module):
 
     # label_input -- negatives provided
     # If label_input is None, train on in-batch negatives
-    def forward(self, context_input, cand_input=None, label_input=None, mst_data=None):
+    def forward(self, context_input, cand_input=None, label_input=None, mst_data=None, pos_neg_loss=False, only_logits=False):
         if mst_data is not None:
             context_embeds = self.encode_context(context_input, requires_grad=True).unsqueeze(2) # batchsize x embed_size x 1
             pos_embeds = mst_data['positive_embeds'].unsqueeze(1) # batchsize x 1 x embed_size
@@ -215,14 +215,20 @@ class BiEncoderRanker(torch.nn.Module):
             flag = label_input is None
             scores = self.score_candidate(context_input, cand_input, flag)
             bs = scores.size(0)
+        
+        if only_logits:
+            return scores
+
         if label_input is None:
             target = torch.LongTensor(torch.arange(bs))
             target = target.to(self.device)
             loss = F.cross_entropy(scores, target, reduction="mean")
         else:
+            if not pos_neg_loss:
+                loss = torch.mean(torch.max(-torch.log(torch.softmax(scores, dim=1) + 1e-8) * label_input, dim=1)[0])
+            else:
+                loss = torch.mean(torch.sum(-torch.log(torch.softmax(scores, dim=1) + 1e-8) * label_input - torch.log(1 - torch.softmax(scores, dim=1) + 1e-8) * (1 - label_input), dim=1))
             # loss = torch.mean(torch.max(-torch.log(torch.softmax(scores, dim=1) + 1e-8) * label_input - torch.log(1 - torch.softmax(scores, dim=1) + 1e-8) * (1 - label_input), dim=1)[0])
-            loss = torch.mean(torch.max(-torch.log(torch.softmax(scores, dim=1) + 1e-8) * label_input, dim=1)[0])
-            # loss = torch.mean(torch.sum(-torch.log(torch.softmax(scores, dim=1) + 1e-8) * label_input - torch.log(1 - torch.softmax(scores, dim=1) + 1e-8) * (1 - label_input), dim=1))
         return loss, scores
 
 

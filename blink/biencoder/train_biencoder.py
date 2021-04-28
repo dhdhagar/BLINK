@@ -65,7 +65,7 @@ def evaluate(
         else:
             context_input, candidate_input, _ = batch
         with torch.no_grad():
-            eval_loss, logits = reranker(context_input, candidate_input)
+            logits = reranker(context_input, candidate_input, only_logits=True)
 
         logits = logits.detach().cpu().numpy()
         # Using in-batch negatives, the label ids are diagonal

@@ -152,7 +152,7 @@ def evaluate_ind_pred(
             context_inputs = context_inputs.cuda()
             label_inputs = label_inputs.cuda()
             
-            _, logits = reranker(context_inputs, candidate_inputs, label_inputs)
+            logits = reranker(context_inputs, candidate_inputs, label_inputs, only_logits=True)
 
         logits = logits.detach().cpu().numpy()
         tmp_eval_accuracy = int(torch.sum(label_inputs[np.arange(label_inputs.shape[0]), np.argmax(logits, axis=1)] == 1))
@@ -195,6 +195,10 @@ def main(params):
         os.makedirs(model_output_path)
     logger = utils.get_logger(params["output_path"])
 
+    pickle_src_path = params["pickle_src_path"]
+    if pickle_src_path is None or not os.path.exists(pickle_src_path):
+        pickle_src_path = model_output_path
+
     knn = params["knn"]
     use_types = params["use_types"]
 
@@ -230,7 +234,7 @@ def main(params):
         torch.cuda.manual_seed_all(seed)
 
     entity_dictionary_loaded = False
-    entity_dictionary_pkl_path = os.path.join(model_output_path, 'entity_dictionary.pickle')
+    entity_dictionary_pkl_path = os.path.join(pickle_src_path, 'entity_dictionary.pickle')
     if os.path.isfile(entity_dictionary_pkl_path):
         print("Loading stored processed entity dictionary...")
         with open(entity_dictionary_pkl_path, 'rb') as read_handle:
@@ -238,8 +242,8 @@ def main(params):
         entity_dictionary_loaded = True
     if not params["only_evaluate"]:
         # Load train data
-        train_tensor_data_pkl_path = os.path.join(model_output_path, 'train_tensor_data.pickle')
-        train_processed_data_pkl_path = os.path.join(model_output_path, 'train_processed_data.pickle')
+        train_tensor_data_pkl_path = os.path.join(pickle_src_path, 'train_tensor_data.pickle')
+        train_processed_data_pkl_path = os.path.join(pickle_src_path, 'train_processed_data.pickle')
         if os.path.isfile(train_tensor_data_pkl_path) and os.path.isfile(train_processed_data_pkl_path):
             print("Loading stored processed train data...")
             with open(train_tensor_data_pkl_path, 'rb') as read_handle:
@@ -301,8 +305,8 @@ def main(params):
     entity_dict_vecs = torch.tensor(list(map(lambda x: x['ids'], entity_dictionary)), dtype=torch.long)
 
     # Load eval data
-    valid_tensor_data_pkl_path = os.path.join(model_output_path, 'valid_tensor_data.pickle')
-    valid_processed_data_pkl_path = os.path.join(model_output_path, 'valid_processed_data.pickle')
+    valid_tensor_data_pkl_path = os.path.join(pickle_src_path, 'valid_tensor_data.pickle')
+    valid_processed_data_pkl_path = os.path.join(pickle_src_path, 'valid_processed_data.pickle')
     if os.path.isfile(valid_tensor_data_pkl_path) and os.path.isfile(valid_processed_data_pkl_path):
         print("Loading stored processed valid data...")
         with open(valid_tensor_data_pkl_path, 'rb') as read_handle:
@@ -420,7 +424,7 @@ def main(params):
             context_inputs_split = context_inputs_split.cuda()
             label_inputs = label_inputs.cuda()
             
-            loss, _ = reranker(context_inputs_split, candidate_inputs, label_inputs)
+            loss, _ = reranker(context_inputs_split, candidate_inputs, label_inputs, pos_neg_loss=params["pos_neg_loss"])
 
             if grad_acc_steps > 1:
                 loss = loss / grad_acc_steps

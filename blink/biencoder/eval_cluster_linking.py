@@ -231,6 +231,10 @@ def main(params):
         os.makedirs(output_path)
     logger = utils.get_logger(params["output_path"])
 
+    pickle_src_path = params["pickle_src_path"]
+    if pickle_src_path is None or not os.path.exists(pickle_src_path):
+        pickle_src_path = output_path
+
     # Init model
     reranker = BiEncoderRanker(params)
     reranker.model.eval()
@@ -246,9 +250,9 @@ def main(params):
 
     # Load test data
     entity_dictionary_loaded = False
-    test_dictionary_pkl_path = os.path.join(output_path, 'test_dictionary.pickle')
-    test_tensor_data_pkl_path = os.path.join(output_path, 'test_tensor_data.pickle')
-    test_mention_data_pkl_path = os.path.join(output_path, 'test_mention_data.pickle')
+    test_dictionary_pkl_path = os.path.join(pickle_src_path, 'test_dictionary.pickle')
+    test_tensor_data_pkl_path = os.path.join(pickle_src_path, 'test_tensor_data.pickle')
+    test_mention_data_pkl_path = os.path.join(pickle_src_path, 'test_mention_data.pickle')
     if os.path.isfile(test_dictionary_pkl_path):
         print("Loading stored processed entity dictionary...")
         with open(test_dictionary_pkl_path, 'rb') as read_handle:

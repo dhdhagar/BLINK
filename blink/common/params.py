@@ -162,6 +162,12 @@ class BlinkParser(argparse.ArgumentParser):
             required=True,
             help="The output directory where generated output file (model, etc.) is to be dumped.",
         )
+        parser.add_argument(
+            "--pickle_src_path",
+            default=None,
+            type=str,
+            help="The directory from which to load intermediate processed data to skip redundant computation.",
+        )
 
 
     def add_training_args(self, args=None):
@@ -255,6 +261,10 @@ class BlinkParser(argparse.ArgumentParser):
         parser.add_argument(
             "--use_types", action="store_true",
             help="Whether to pick candidates from only the entities belonging to the mention type",
+        )
+        parser.add_argument(
+            "--pos_neg_loss", action="store_true",
+            help="Whether to use both the positive and negative softmax values to compute the loss or to use only the positive",
         )
 
     def add_eval_args(self, args=None):
