@@ -27,6 +27,8 @@ from IPython import embed
 logger = None
 
 def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_gpu, silent=False, type_data=None):
+    torch.cuda.empty_cache()
+
     reranker.model.eval()
     use_types = type_data is not None # Should be a dict containing "entity_dictionary" and "mention_data"
     n_entities = len(valid_dict_vecs)
