@@ -134,7 +134,7 @@ def evaluate_ind_pred(
         with torch.no_grad():
             mention_embeddings = reranker.encode_context(context_inputs)
             # context_inputs: Shape: batch x token_len
-            candidate_inputs = np.array([], dtype=np.long) # Shape: (batch*knn) x token_len
+            candidate_inputs = np.array([], dtype=np.int) # Shape: (batch*knn) x token_len
             label_inputs = torch.zeros((context_inputs.shape[0], knn), dtype=torch.float32) # Shape: batch x knn
 
             for i, m_embed in enumerate(mention_embeddings):
@@ -403,7 +403,7 @@ def main(params):
             mention_embeddings = train_men_embeddings[mention_idxs.cpu()]
             
             # context_inputs: Shape: batch x token_len
-            candidate_inputs = np.array([], dtype=np.long) # Shape: (batch*knn) x token_len
+            candidate_inputs = np.array([], dtype=np.int) # Shape: (batch*knn) x token_len
             label_inputs = torch.tensor([[1]+[0]*(knn-1)]*n_gold.sum(), dtype=torch.float32) # Shape: batch(with split rows) x knn
             context_inputs_split = torch.zeros((label_inputs.size(0), context_inputs.size(1)), dtype=torch.long) # Shape: batch(with split rows) x token_len
             # label_inputs = (candidate_idxs >= 0).type(torch.float32) # Shape: batch x knn
