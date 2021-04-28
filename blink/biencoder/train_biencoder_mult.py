@@ -411,7 +411,7 @@ def main(params):
                 if use_types:
                     entity_type = train_processed_data[mention_idxs[i]]['type']
                     train_dict_index = train_dict_indexes[entity_type]
-                _, knn_dict_idxs = train_dict_index.search(np.expand_dims(m_embed, axis=0), (knn + n_gold - 1)) # Fetch NNs to ensure one entity per row
+                _, knn_dict_idxs = train_dict_index.search(np.expand_dims(m_embed, axis=0), (knn + int(n_gold[i]) - 1)) # Fetch NNs to ensure one entity per row
                 knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()
                 if use_types:
                     # Map type-specific indices to the entire dictionary
