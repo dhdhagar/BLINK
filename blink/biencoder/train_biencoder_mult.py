@@ -26,11 +26,10 @@ from IPython import embed
 
 logger = None
 
-def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_gpu, silent=False, type_data=None):
+def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_gpu, entity_data, query_data, silent=False, use_types=False):
     torch.cuda.empty_cache()
 
     reranker.model.eval()
-    use_types = type_data is not None # Should be a dict containing "entity_dictionary" and "mention_data"
     n_entities = len(valid_dict_vecs)
     n_mentions = len(valid_men_vecs)
     joint_graphs = {}
@@ -45,9 +44,9 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
 
     if use_types:
         print("Eval: Dictionary: Embedding and building index")
-        dict_embeds, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=type_data['entity_dictionary'])
+        dict_embeds, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_data)
         print("Eval: Queries: Embedding and building index")
-        men_embeds, men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, valid_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=type_data['mention_data'])
+        men_embeds, men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, valid_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=query_data)
     else:
         print("Eval: Dictionary: Embedding and building index")
         dict_embeds, dict_index = data_process.embed_and_index(
@@ -61,7 +60,7 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
         
         dict_type_idx_mapping, men_type_idx_mapping = None, None
         if use_types:
-            entity_type = type_data['mention_data'][men_query_idx]['type']
+            entity_type = query_data[men_query_idx]['type']
             dict_index = dict_indexes[entity_type]
             men_index = men_indexes[entity_type]
             dict_type_idx_mapping = dict_idxs_by_type[entity_type]
@@ -103,7 +102,7 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
         partitioned_graph, clusters = eval_cluster_linking.partition_graph(
             joint_graphs[k], n_entities, directed=True, return_clusters=True)
         # Infer predictions from clusters
-        result = eval_cluster_linking.analyzeClusters(clusters, type_data['entity_dictionary'], type_data['mention_data'], k)
+        result = eval_cluster_linking.analyzeClusters(clusters, entity_data, query_data, k)
         acc = float(result['accuracy'].split(' ')[0])
         max_eval_acc = max(acc, max_eval_acc)
         logger.info(f"Eval accuracy for graph@k={k}: {acc}%")
@@ -112,10 +111,9 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
 
 # The evaluate function makes a prediction on a set of knn candidates for every mention
 def evaluate_ind_pred(
-    reranker, valid_dataloader, valid_dict_vecs, params, device, logger, knn, n_gpu, type_data=None
+    reranker, valid_dataloader, valid_dict_vecs, params, device, logger, knn, n_gpu, entity_data, query_data, use_types=False
 ):
     reranker.model.eval()
-    use_types = type_data is not None # Should be a dict containing "entity_dictionary" and "mention_data"
     knn = max(16, 2*knn) # Accomodate the approximate-nature of the knn procedure by retrieving more samples and then filtering
     iter_ = valid_dataloader if params["silent"] else tqdm(valid_dataloader, desc="Evaluation")
     eval_accuracy = 0.0
@@ -125,7 +123,7 @@ def evaluate_ind_pred(
     if not use_types:
         valid_dict_embeddings, valid_dict_index = data_process.embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu)
     else:
-        valid_dict_embeddings, valid_dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=type_data['entity_dictionary'])
+        valid_dict_embeddings, valid_dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_data)
 
     for step, batch in enumerate(iter_):
         batch = tuple(t.to(device) for t in batch)
@@ -139,7 +137,7 @@ def evaluate_ind_pred(
 
             for i, m_embed in enumerate(mention_embeddings):
                 if use_types:
-                    entity_type = type_data['mention_data'][mention_idxs[i]]['type']
+                    entity_type = query_data[mention_idxs[i]]['type']
                     valid_dict_index = valid_dict_indexes[entity_type]
                 _, knn_dict_idxs = valid_dict_index.search(np.expand_dims(m_embed, axis=0), knn)
                 knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()
@@ -352,14 +350,9 @@ def main(params):
     #     valid_tensor_data, sampler=valid_sampler, batch_size=eval_batch_size
     # )
 
-    evaluate_type_data = {
-        'entity_dictionary': entity_dictionary,
-        'mention_data': valid_processed_data
-    } if use_types else None
-
     if params["only_evaluate"]:
         evaluate(
-            reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, silent=params["silent"], type_data=evaluate_type_data
+            reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_dictionary, valid_processed_data, silent=params["silent"], use_types=use_types
         )
         exit()
 
@@ -455,7 +448,7 @@ def main(params):
             if (step + 1) % (params["eval_interval"] * grad_acc_steps) == 0:
                 logger.info("Evaluation on the development dataset")
                 evaluate(
-                    reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, silent=params["silent"], type_data=evaluate_type_data
+                    reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_dictionary, valid_processed_data, silent=params["silent"], use_types=use_types
                 )
                 model.train()
                 logger.info("\n")
@@ -468,7 +461,7 @@ def main(params):
         logger.info(f"Model saved at {epoch_output_folder_path}")
 
         normalized_accuracy = evaluate(
-            reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, silent=params["silent"], type_data=evaluate_type_data
+            reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_dictionary, valid_processed_data, silent=params["silent"], use_types=use_types
         )
 
         ls = [best_score, normalized_accuracy]
