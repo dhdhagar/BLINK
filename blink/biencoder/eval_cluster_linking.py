@@ -443,7 +443,6 @@ def main(params):
 
     try:
         for recall_k in recall_accuracy:
-            recall_accuracy[recall_k] /= n_mentions
             result_overview[f'recall@{recall_k}'] = recall_accuracy[recall_k]
     except:
         logger.info("Recall data not available since graphs were loaded from disk")
