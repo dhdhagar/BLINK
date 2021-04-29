@@ -352,7 +352,7 @@ def main(params):
 
     if params["only_evaluate"]:
         evaluate(
-            reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_dictionary, valid_processed_data, silent=params["silent"], use_types=use_types
+            reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"], use_types=use_types
         )
         exit()
 
@@ -448,7 +448,7 @@ def main(params):
             if (step + 1) % (params["eval_interval"] * grad_acc_steps) == 0:
                 logger.info("Evaluation on the development dataset")
                 evaluate(
-                    reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_dictionary, valid_processed_data, silent=params["silent"], use_types=use_types
+                    reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"], use_types=use_types
                 )
                 model.train()
                 logger.info("\n")
@@ -461,7 +461,7 @@ def main(params):
         logger.info(f"Model saved at {epoch_output_folder_path}")
 
         normalized_accuracy = evaluate(
-            reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_dictionary, valid_processed_data, silent=params["silent"], use_types=use_types
+            reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"], use_types=use_types
         )
 
         ls = [best_score, normalized_accuracy]
