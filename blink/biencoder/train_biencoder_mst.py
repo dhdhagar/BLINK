@@ -417,7 +417,10 @@ def main(params):
                 positive_idxs.append(gold_link_idx)
                 # Add the negative examples
                 negative_dict_inputs += list(knn_dict_idxs[~np.isin(knn_dict_idxs, list(gold_idxs))][:knn_dict])
-                negative_men_inputs += list(knn_men_idxs[~np.isin(knn_men_idxs, list(gold_cluster_mentions))][:knn_men])
+                negative_men_inputs += list(knn_men_idxs[~np.isin(knn_men_idxs, np.concatenate([train_gold_clusters[gi] for gi in gold_idxs]))][:knn_men])
+            
+            assert len(negative_dict_inputs) == len(mention_embeddings) * knn_dict
+            assert len(negative_men_inputs) == len(mention_embeddings) * knn_men
             
             negative_dict_inputs = torch.tensor(list(map(lambda x: entity_dict_vecs[x].numpy(), negative_dict_inputs)))
             negative_men_inputs = torch.tensor(list(map(lambda x: train_men_vecs[x].numpy(), negative_men_inputs)))
