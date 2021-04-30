@@ -67,8 +67,8 @@ def get_query_nn(model,
     _, nn_idxs = index.search(q_embed, k)
     nn_idxs = nn_idxs.astype(np.int64).flatten()
     if type_idx_mapping is not None:
-        nn_idxs = np.array(list(map(lambda x: type_idx_mapping[x], nn_idxs)))
-    nn_embeds = torch.tensor(list(map(lambda x: embeds[x], nn_idxs))).cuda()
+        nn_idxs = type_idx_mapping[nn_idxs]
+    nn_embeds = torch.tensor(embeds[nn_idxs]).cuda()
 
     # Compute query-candidate similarity scores
     scores = torch.flatten(
