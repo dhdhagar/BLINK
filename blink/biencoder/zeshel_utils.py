@@ -11,7 +11,7 @@ import torch
 import pathlib
 import os
 
-DOC_PATH = os.path.join(pathlib.Path(__file__).parent.parent.absolute(), "data/zeshel/documents/")
+DOC_PATH = os.path.join(pathlib.Path(__file__).parent.parent.parent.absolute(), "data/zeshel/documents/")
 
 WORLDS = [
     'american_football',
