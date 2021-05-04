@@ -124,9 +124,6 @@ def process_mention_data(
         iter_ = tqdm(samples)
 
     use_world = True
-    
-    dictionary = []
-    id_to_idx = {}
 
     for idx, sample in enumerate(iter_):
         context_tokens = get_context_representation(
@@ -144,10 +141,7 @@ def process_mention_data(
         label_tokens = get_candidate_representation(
             label, tokenizer, max_cand_length, title,
         )
-        if sample["label_id"] not in id_to_idx:
-            id_to_idx[sample["label_id"]] = len(dictionary)
-            dictionary.append(sample["label_id"])
-        label_idx = id_to_idx[sample["label_id"]]
+        label_idx = int(sample["label_id"])
 
         record = {
             "context": context_tokens,
@@ -155,8 +149,8 @@ def process_mention_data(
             "label_idx": [label_idx],
         }
 
-        if "type" in sample: # "world"
-            src = sample["type"]
+        if "world" in sample:
+            src = sample["world"]
             src = world_to_id[src]
             record["src"] = [src]
         else:
