@@ -8,8 +8,10 @@
 # Utility code for zeshel dataset
 import json
 import torch
+import pathlib
+import os
 
-DOC_PATH = "/mnt/nfs/scratch1/rangell/coref_entity_linking/data/zeshel/documents/"
+DOC_PATH = os.path.join(pathlib.Path(__file__).parent.parent.absolute(), "data/zeshel/documents/")
 
 WORLDS = [
     'american_football',
