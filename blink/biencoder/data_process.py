@@ -125,6 +125,9 @@ def process_mention_data(
 
     use_world = True
 
+    id_to_idx = {}
+    label_id_is_int = True
+
     for idx, sample in enumerate(iter_):
         context_tokens = get_context_representation(
             sample,
@@ -141,7 +144,16 @@ def process_mention_data(
         label_tokens = get_candidate_representation(
             label, tokenizer, max_cand_length, title,
         )
-        label_idx = int(sample["label_id"])
+        
+        if label_id_is_int:
+            try:
+                label_idx = int(sample["label_id"])
+            except:
+                label_id_is_int = False
+        if not label_id_is_int:
+            if sample["label_id"] not in id_to_idx:
+                id_to_idx[sample["label_id"]] = len(id_to_idx.keys())
+            label_idx = id_to_idx[sample["label_id"]]
 
         record = {
             "context": context_tokens,
@@ -149,8 +161,9 @@ def process_mention_data(
             "label_idx": [label_idx],
         }
 
-        if "world" in sample:
-            src = sample["world"]
+        type_key = "world" if "world" in sample else "type"
+        if type_key in sample:
+            src = sample[type_key]
             src = world_to_id[src]
             record["src"] = [src]
         else:
