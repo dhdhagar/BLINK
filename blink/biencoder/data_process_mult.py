@@ -223,7 +223,7 @@ def embed_and_index(model, token_id_vecs, encoder_type, batch_size=768, n_gpu=1,
         # Build index
         d = embeds.shape[1]
         nembeds = embeds.shape[0]
-        if nembeds < 10000:  # if the number of embeddings is small, don't approximate
+        if nembeds <= 10000:  # if the number of embeddings is small, don't approximate
             index = faiss.IndexFlatIP(d)
             index.add(embeds)
         else:
