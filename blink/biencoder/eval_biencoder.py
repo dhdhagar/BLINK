@@ -251,7 +251,7 @@ def main(params):
         if cand_encode_path is not None:
             # Save candidate encoding to avoid re-compute
             logger.info("Saving candidate encoding to file " + cand_encode_path)
-            torch.save(cand_encode_path, candidate_encoding)
+            torch.save(candidate_encoding, cand_encode_path)
 
     test_samples = utils.read_dataset(params["mode"], params["data_path"])
     logger.info("Read %d test samples." % len(test_samples))
