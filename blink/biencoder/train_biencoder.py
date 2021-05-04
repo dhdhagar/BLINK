@@ -214,13 +214,14 @@ def main(params):
     optimizer = get_optimizer(model, params)
     scheduler = get_scheduler(params, optimizer, len(train_tensor_data), logger)
 
-    model.train()
+    # model.train()
 
     best_epoch_idx = -1
     best_score = -1
 
     num_train_epochs = params["num_train_epochs"]
     for epoch_idx in trange(int(num_train_epochs), desc="Epoch"):
+        model.train()
         tr_loss = 0
         results = None
 
