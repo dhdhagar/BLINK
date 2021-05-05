@@ -40,6 +40,22 @@ for doc_fname in tqdm(os.listdir(custom_split_dir), desc='Loading custom data'):
                     print(original_mention)
                     print("Custom:")
                     print(custom_mention)
+
+                    if custom_mention['mention'].lower().strip() != original_mention['mention'].lower().strip():
+                        print('Mismatch key: mention')
+                    elif custom_mention['context_left'].lower().strip() != original_mention['context_left'].lower().strip():
+                        print('Mismatch key: context_left')
+                    elif custom_mention['context_right'].lower().strip() != original_mention['context_right'].lower().strip():
+                        print('Mismatch key: context_right')
+                    elif custom_mention['label'].lower().strip() != original_mention['label'].lower().strip():
+                        print('Mismatch key: label')
+                    elif custom_mention['label_title'].lower().strip() != original_mention['label_title'].lower().strip():
+                        print('Mismatch key: label_title')
+                    elif custom_mention['type'].lower().strip() != original_mention['world'].lower().strip():
+                        print('Mismatch key: type | world')
+                    else:
+                        print('label_title not found in dictionary')
+
                     exit()
 
 print('PASS!')
