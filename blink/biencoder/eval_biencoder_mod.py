@@ -283,7 +283,7 @@ def main(params):
     # test_dict_vecs = torch.load('models/trained/zeshel_og/eval/data_og/custom_test_ent_vecs.t7')
     test_men_vecs = torch.load('models/trained/zeshel_og/eval/data_og/custom_test_men_vecs.t7')
     # world_to_type = {12:'forgotten_realms', 13:'lego', 14:'star_trek', 15:'yugioh'}                    
-    # embed()
+    embed()
 
     test_sampler = SequentialSampler(test_tensor_data)
     test_dataloader = DataLoader(
