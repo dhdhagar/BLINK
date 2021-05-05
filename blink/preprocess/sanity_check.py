@@ -21,7 +21,8 @@ for e in entity_dictionary:
     dict_by_type[e['type']].add(e['title'])
 
 for doc_fname in tqdm(os.listdir(custom_split_dir), desc='Loading custom data'):
-    assert doc_fname.endswith('.jsonl')
+    if not doc_fname.endswith('.jsonl'):
+        continue
     split_name = doc_fname.split('.')[0]
     with open(os.path.join(custom_split_dir, doc_fname), 'r') as f2:
         with open(os.path.join(original_split_dir, doc_fname), 'r') as f3:
@@ -30,8 +31,8 @@ for doc_fname in tqdm(os.listdir(custom_split_dir), desc='Loading custom data'):
                 original_mention = json.loads(f3.readline().strip())
                 try:
                     assert custom_mention['mention'].lower().strip() == original_mention['mention'].lower().strip()
-                    assert custom_mention['context_left'].lower().strip() == original_mention['context_left'].lower().strip()
-                    assert custom_mention['context_right'].lower().strip() == original_mention['context_right'].lower().strip()
+                    # assert custom_mention['context_left'].lower().strip() == original_mention['context_left'].lower().strip()
+                    # assert custom_mention['context_right'].lower().strip() == original_mention['context_right'].lower().strip()
                     assert custom_mention['label'].lower().strip() == original_mention['label'].lower().strip()
                     assert custom_mention['label_title'].lower().strip() == original_mention['label_title'].lower().strip()
                     assert custom_mention['type'].lower().strip() == original_mention['world'].lower().strip()
