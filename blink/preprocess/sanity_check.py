@@ -45,6 +45,7 @@ for doc_fname in tqdm(os.listdir(custom_split_dir), desc='Loading custom data'):
                         print('Mismatch key: mention')
                     elif custom_mention['context_left'].lower().strip() != original_mention['context_left'].lower().strip():
                         print('Mismatch key: context_left')
+                        print(f'Length custom: {len(custom_mention['context_left'].lower().strip())} | Length original: {len(original_mention['context_left'].lower().strip())}')
                     elif custom_mention['context_right'].lower().strip() != original_mention['context_right'].lower().strip():
                         print('Mismatch key: context_right')
                     elif custom_mention['label'].lower().strip() != original_mention['label'].lower().strip():
