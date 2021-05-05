@@ -61,7 +61,7 @@ def load_entity_dict_zeshel(logger, params):
                 line = line.rstrip()
                 item = json.loads(line)
                 text = item["text"]
-                text = item["title"]
+                title = item["title"]
                 doc_list.append((title, text)) # text[:256]
 
                 if params["debug"]:
