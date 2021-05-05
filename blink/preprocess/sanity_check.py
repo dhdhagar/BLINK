@@ -1,6 +1,6 @@
 import pickle
 import os
-import tqdm
+from tqdm import tqdm
 
 BLINK_ROOT = f'{os.path.abspath(os.path.dirname(__file__))}/../..'
 
