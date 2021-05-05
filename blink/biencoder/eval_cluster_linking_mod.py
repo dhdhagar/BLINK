@@ -346,7 +346,8 @@ def main(params):
                 for i,oge in enumerate(tqdm(og_embeds[world])):
                     dict_embed_idx = dict_idxs_by_type[world_to_type[world]][i]
                     assert torch.eq(oge, dict_embeds[dict_embed_idx])
-
+            print('PASS')
+            exit()
             print("Queries: Embedding and building index")
             men_embeds, men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, test_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=mention_data, force_exact_search=True)
         else:
