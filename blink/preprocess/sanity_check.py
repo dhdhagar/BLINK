@@ -24,14 +24,22 @@ for doc_fname in tqdm(os.listdir(custom_split_dir), desc='Loading custom data'):
     split_name = doc_fname.split('.')[0]
     with open(os.path.join(custom_split_dir, doc_fname), 'r') as f2:
         with open(os.path.join(original_split_dir, doc_fname), 'r') as f3:
-            for idx, line in enumerate(f2):
+            for idx, line in enumerate(tqdm(f2)):
                 custom_mention = json.loads(line.strip())
                 original_mention = json.loads(f3.readline().strip())
-                assert custom_mention['mention'] == original_mention['mention']
-                assert custom_mention['context_left'].lower() == original_mention['context_left'].lower()
-                assert custom_mention['context_right'].lower() == original_mention['context_right'].lower()
-                assert custom_mention['label'] == original_mention['label']
-                assert custom_mention['label_title'] == original_mention['label_title']
-                assert custom_mention['type'] == original_mention['world']
-                assert custom_mention['label_title'] in dict_by_type[custom_mention['type']]
+                try:
+                    assert custom_mention['mention'] == original_mention['mention']
+                    assert custom_mention['context_left'].lower() == original_mention['context_left'].lower()
+                    assert custom_mention['context_right'].lower() == original_mention['context_right'].lower()
+                    assert custom_mention['label'] == original_mention['label']
+                    assert custom_mention['label_title'] == original_mention['label_title']
+                    assert custom_mention['type'] == original_mention['world']
+                    assert custom_mention['label_title'] in dict_by_type[custom_mention['type']]
+                except:
+                    print("Original:")
+                    print(original_mention)
+                    print("Custom:")
+                    print(custom_mention)
+                    exit()
+
 print('PASS!')
