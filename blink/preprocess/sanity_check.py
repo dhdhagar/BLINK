@@ -4,7 +4,7 @@ import tqdm
 
 BLINK_ROOT = f'{os.path.abspath(os.path.dirname(__file__))}/../..'
 
-custom_dict_path = os.path.join(BLINK_ROOT, 'data', 'zeshel', 'dictionary.pickle')
+custom_dict_path = os.path.join(BLINK_ROOT, 'data', 'zeshel', 'processed', 'dictionary.pickle')
 custom_split_dir = os.path.join(BLINK_ROOT, 'data', 'zeshel', 'processed')
 
 original_split_dir = os.path.join(BLINK_ROOT, 'data', 'zeshel', 'blink_format')
