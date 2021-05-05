@@ -28,12 +28,12 @@ for doc_fname in tqdm(os.listdir(custom_split_dir), desc='Loading custom data'):
                 custom_mention = json.loads(line.strip())
                 original_mention = json.loads(f3.readline().strip())
                 try:
-                    assert custom_mention['mention'].lower() == original_mention['mention'].lower()
-                    assert custom_mention['context_left'].lower() == original_mention['context_left'].lower()
-                    assert custom_mention['context_right'].lower() == original_mention['context_right'].lower()
-                    assert custom_mention['label'].lower() == original_mention['label'].lower()
-                    assert custom_mention['label_title'].lower() == original_mention['label_title'].lower()
-                    assert custom_mention['type'].lower() == original_mention['world'].lower()
+                    assert custom_mention['mention'].lower().strip() == original_mention['mention'].lower().strip()
+                    assert custom_mention['context_left'].lower().strip() == original_mention['context_left'].lower().strip()
+                    assert custom_mention['context_right'].lower().strip() == original_mention['context_right'].lower().strip()
+                    assert custom_mention['label'].lower().strip() == original_mention['label'].lower().strip()
+                    assert custom_mention['label_title'].lower().strip() == original_mention['label_title'].lower().strip()
+                    assert custom_mention['type'].lower().strip() == original_mention['world'].lower().strip()
                     assert custom_mention['label_title'] in dict_by_type[custom_mention['type']]
                 except:
                     print("Original:")
