@@ -16,8 +16,8 @@ from tqdm import tqdm
 from IPython import embed
 
 
-DATA_DIR = '/mnt/nfs/scratch1/rangell/BLINK/data/zeshel'
-OUTPUT_DIR = '/home/dagarwal/work1/BLINK/data/zeshel/processed'
+DATA_DIR = os.path.join(BLINK_ROOT, 'data', 'zeshel')
+OUTPUT_DIR = os.path.join(BLINK_ROOT, 'data', 'zeshel', 'processed')
 
 # get all of the documents
 entity2idx = {}
@@ -29,6 +29,7 @@ for doc_fname in tqdm(os.listdir(doc_dir), desc='Loading docuemnts'):
         for idx, line in enumerate(f):
             one_doc = json.loads(line.strip())
             doc_id = one_doc['document_id']
+            assert doc_id not in documents
             documents[doc_id] = one_doc
 
 

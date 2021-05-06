@@ -4,8 +4,8 @@ import pickle
 
 BLINK_ROOT = f'{os.path.abspath(os.path.dirname(__file__))}/../..'
 
-input_dir = os.path.join(BLINK_ROOT, 'data', 'zeshel', 'documents')
-output_fpath = os.path.join(BLINK_ROOT, 'data', 'zeshel', 'processed', 'dictionary.pickle')
+input_dir = os.path.join(BLINK_ROOT, 'data', 'medmentions', 'documents')
+output_fpath = os.path.join(BLINK_ROOT, 'data', 'medmentions', 'processed', 'dictionary.pickle')
 
 dictionary = []
 label_ids = set()
