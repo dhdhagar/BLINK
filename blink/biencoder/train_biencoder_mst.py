@@ -339,15 +339,19 @@ def main(params):
         # Compute mention and entity embeddings at the start of each epoch
         if use_types:
             if load_stored_data:
-                train_dict_embeddings, train_dict_indexes, dict_idxs_by_type = init_run_data['train_dict_embeddings'], init_run_data['train_dict_indexes'], init_run_data['dict_idxs_by_type']
-                train_men_embeddings, train_men_indexes, men_idxs_by_type = init_run_data['train_men_embeddings'], init_run_data['train_men_indexes'], init_run_data['men_idxs_by_type']
+                train_dict_embeddings, dict_idxs_by_type = init_run_data['train_dict_embeddings'], init_run_data['dict_idxs_by_type']
+                train_dict_indexes = data_process.get_index_from_embeds(train_dict_embeddings, dict_idxs_by_type)
+                train_men_embeddings, men_idxs_by_type = init_run_data['train_men_embeddings'], init_run_data['men_idxs_by_type']
+                train_men_indexes = data_process.get_index_from_embeds(train_men_embeddings, men_idxs_by_type)
             else:
                 train_dict_embeddings, train_dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_dictionary, force_exact_search=params['force_exact_search'])
                 train_men_embeddings, train_men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, train_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=train_processed_data, force_exact_search=params['force_exact_search'])
         else:
             if load_stored_data:
-                train_dict_embeddings, train_dict_index = init_run_data['train_dict_embeddings'], init_run_data['train_dict_index']
-                train_men_embeddings, train_men_index = init_run_data['train_men_embeddings'], init_run_data['train_men_index']
+                train_dict_embeddings = init_run_data['train_dict_embeddings']
+                train_dict_index = data_process.get_index_from_embeds(train_dict_embeddings)
+                train_men_embeddings = init_run_data['train_men_embeddings']
+                train_men_index = data_process.get_index_from_embeds(train_men_embeddings)
             else:
                 train_dict_embeddings, train_dict_index = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, force_exact_search=params['force_exact_search'])
                 train_men_embeddings, train_men_index = data_process.embed_and_index(reranker, train_men_vecs, encoder_type="context", n_gpu=n_gpu, force_exact_search=params['force_exact_search'])
@@ -358,13 +362,9 @@ def main(params):
             init_run_data['train_dict_embeddings'] = train_dict_embeddings
             init_run_data['train_men_embeddings'] = train_men_embeddings
             if use_types:
-                init_run_data['train_dict_indexes'] = train_dict_indexes
                 init_run_data['dict_idxs_by_type'] = dict_idxs_by_type
-                init_run_data['train_men_indexes'] = train_men_indexes
                 init_run_data['men_idxs_by_type'] = men_idxs_by_type
-            else:
-                init_run_data['train_dict_index'] = train_dict_index
-                init_run_data['train_men_index'] = train_men_index
+            # NOTE: Cannot pickle faiss index because it is a SwigPyObject
             torch.save(init_run_data, init_run_pkl_path, pickle_protocol=pickle.HIGHEST_PROTOCOL)
 
         init_base_model_run = False

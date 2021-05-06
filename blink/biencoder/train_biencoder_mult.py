@@ -392,12 +392,14 @@ def main(params):
         # Compute mention and entity embeddings at the start of each epoch
         if use_types:
             if load_stored_data:
-                train_dict_embeddings, train_dict_indexes, dict_idxs_by_type = init_run_data['train_dict_embeddings'], init_run_data['train_dict_indexes'], init_run_data['dict_idxs_by_type']
+                train_dict_embeddings, dict_idxs_by_type = init_run_data['train_dict_embeddings'], init_run_data['dict_idxs_by_type']
+                train_dict_indexes = data_process.get_index_from_embeds(train_dict_embeddings, dict_idxs_by_type)
             else:
                 train_dict_embeddings, train_dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_dictionary, force_exact_search=params['force_exact_search'])
         else:
             if load_stored_data:
-                train_dict_embeddings, train_dict_index = init_run_data['train_dict_embeddings'], init_run_data['train_dict_index']
+                train_dict_embeddings = init_run_data['train_dict_embeddings']
+                train_dict_index = data_process.get_index_from_embeds(train_dict_embeddings)
             else:
                 train_dict_embeddings, train_dict_index = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, force_exact_search=params['force_exact_search'])
         if load_stored_data:

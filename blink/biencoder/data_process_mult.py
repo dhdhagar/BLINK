@@ -213,33 +213,33 @@ def compute_gold_clusters(mention_data):
             clusters[label_idx].append(men_idx)
     return clusters
 
-def embed_and_index(model, token_id_vecs, encoder_type, batch_size=768, n_gpu=1, only_embed=False, corpus=None, force_exact_search=False):
-    def build_index(embeds):
-        if type(embeds) is not np.ndarray:
-            if torch.is_tensor(embeds):
-                embeds = embeds.numpy()
-            else:
-                embeds = np.array(embeds)
-        # Build index
-        d = embeds.shape[1]
-        nembeds = embeds.shape[0]
-        if nembeds <= 10000 or force_exact_search:  # if the number of embeddings is small, don't approximate
-            index = faiss.IndexFlatIP(d)
-            index.add(embeds)
+def build_index(embeds):
+    if type(embeds) is not np.ndarray:
+        if torch.is_tensor(embeds):
+            embeds = embeds.numpy()
         else:
-            # number of quantized cells
-            nlist = int(math.floor(math.sqrt(nembeds)))
-            # number of the quantized cells to probe
-            nprobe = int(math.floor(math.sqrt(nlist)))
-            quantizer = faiss.IndexFlatIP(d)
-            index = faiss.IndexIVFFlat(
-                quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
-            )
-            index.train(embeds)
-            index.add(embeds)
-            index.nprobe = nprobe
-        return index
-    
+            embeds = np.array(embeds)
+    # Build index
+    d = embeds.shape[1]
+    nembeds = embeds.shape[0]
+    if nembeds <= 10000 or force_exact_search:  # if the number of embeddings is small, don't approximate
+        index = faiss.IndexFlatIP(d)
+        index.add(embeds)
+    else:
+        # number of quantized cells
+        nlist = int(math.floor(math.sqrt(nembeds)))
+        # number of the quantized cells to probe
+        nprobe = int(math.floor(math.sqrt(nlist)))
+        quantizer = faiss.IndexFlatIP(d)
+        index = faiss.IndexIVFFlat(
+            quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
+        )
+        index.train(embeds)
+        index.add(embeds)
+        index.nprobe = nprobe
+    return index
+
+def embed_and_index(model, token_id_vecs, encoder_type, batch_size=768, n_gpu=1, only_embed=False, corpus=None, force_exact_search=False):
     with torch.no_grad():
         if encoder_type == 'context':
             encoder = model.encode_context
@@ -279,3 +279,12 @@ def embed_and_index(model, token_id_vecs, encoder_type, batch_size=768, n_gpu=1,
             search_indexes[ent_type] = build_index(embeds[corpus_idxs[ent_type]])
             corpus_idxs[ent_type] = np.array(corpus_idxs[ent_type])
         return embeds, search_indexes, corpus_idxs
+
+def get_index_from_embeds(embeds, corpus_idxs=None):
+    if corpus_idxs is None:
+        index = build_index(embeds)
+        return index
+    search_indexes = {}
+    for ent_type in corpus_idxs:
+        search_indexes[ent_type] = build_index(embeds[corpus_idxs[ent_type]])
+    return search_indexes
