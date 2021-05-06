@@ -320,7 +320,7 @@ def main(params):
     num_train_epochs = params["num_train_epochs"]
     
     init_base_model_run = True if params.get("path_to_model", None) is None else False
-    init_run_pkl_path = os.join(pickle_src_path, f'init_run_{"type" if use_types else "notype"}.t7')
+    init_run_pkl_path = os.path.join(pickle_src_path, f'init_run_{"type" if use_types else "notype"}.t7')
 
     for epoch_idx in trange(int(num_train_epochs), desc="Epoch"):
         model.train()
