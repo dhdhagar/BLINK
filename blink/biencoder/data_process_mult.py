@@ -213,7 +213,7 @@ def compute_gold_clusters(mention_data):
             clusters[label_idx].append(men_idx)
     return clusters
 
-def build_index(embeds):
+def build_index(embeds, force_exact_search):
     if type(embeds) is not np.ndarray:
         if torch.is_tensor(embeds):
             embeds = embeds.numpy()
@@ -264,7 +264,7 @@ def embed_and_index(model, token_id_vecs, encoder_type, batch_size=768, n_gpu=1,
 
         if corpus is None:
             # When "use_types" is False
-            index = build_index(embeds)
+            index = build_index(embeds, force_exact_search)
             return embeds, index
         
         # Build type-specific search indexes
@@ -276,15 +276,15 @@ def embed_and_index(model, token_id_vecs, encoder_type, batch_size=768, n_gpu=1,
                 corpus_idxs[ent_type] = []
             corpus_idxs[ent_type].append(i)
         for ent_type in corpus_idxs:
-            search_indexes[ent_type] = build_index(embeds[corpus_idxs[ent_type]])
+            search_indexes[ent_type] = build_index(embeds[corpus_idxs[ent_type]], force_exact_search)
             corpus_idxs[ent_type] = np.array(corpus_idxs[ent_type])
         return embeds, search_indexes, corpus_idxs
 
-def get_index_from_embeds(embeds, corpus_idxs=None):
+def get_index_from_embeds(embeds, corpus_idxs=None, force_exact_search=False):
     if corpus_idxs is None:
-        index = build_index(embeds)
+        index = build_index(embeds, force_exact_search)
         return index
     search_indexes = {}
     for ent_type in corpus_idxs:
-        search_indexes[ent_type] = build_index(embeds[corpus_idxs[ent_type]])
+        search_indexes[ent_type] = build_index(embeds[corpus_idxs[ent_type]], force_exact_search)
     return search_indexes
