@@ -372,18 +372,41 @@ def main(params):
     best_score = -1
     num_train_epochs = params["num_train_epochs"]
     
+    init_base_model_run = True if params.get("path_to_model", None) is None else False
+    init_run_pkl_path = os.join(pickle_src_path, f'init_run_{'type' if use_types else 'notype'}.t7')
+
     for epoch_idx in trange(int(num_train_epochs), desc="Epoch"):
         model.train()
         torch.cuda.empty_cache()
         tr_loss = 0
         results = None
 
+        # Check if embeddings and index can be loaded
+        init_run_data_loaded = False
+        if init_base_model_run:
+            if os.path.isfile(init_run_pkl_path):
+                init_run_data = torch.load(init_run_pkl_path)
+                init_run_data_loaded = True
+        load_stored_data = init_base_model_run and init_run_data_loaded
+
         # Compute mention and entity embeddings at the start of each epoch
         if use_types:
-            train_dict_embeddings, train_dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_dictionary, force_exact_search=params['force_exact_search'])
+            if load_stored_data:
+                train_dict_embeddings, train_dict_indexes, dict_idxs_by_type = init_run_data['train_dict_embeddings'], init_run_data['train_dict_indexes'], init_run_data['dict_idxs_by_type']
+            else:
+                train_dict_embeddings, train_dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_dictionary, force_exact_search=params['force_exact_search'])
         else:
-            train_dict_embeddings, train_dict_index = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, force_exact_search=params['force_exact_search'])
-        train_men_embeddings = data_process.embed_and_index(reranker, train_men_vecs, encoder_type="context", n_gpu=n_gpu, only_embed=True)
+            if load_stored_data:
+                train_dict_embeddings, train_dict_index = init_run_data['train_dict_embeddings'], init_run_data['train_dict_index']
+            else:
+                train_dict_embeddings, train_dict_index = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, force_exact_search=params['force_exact_search'])
+        if load_stored_data:
+            train_men_embeddings = init_run_data['train_men_embeddings']
+        else:
+            train_men_embeddings = data_process.embed_and_index(reranker, train_men_vecs, encoder_type="context", n_gpu=n_gpu, only_embed=True)
+
+        # NOTE: Saving intial embeds and index only throught the MST procedure since that data is a superset of what is used here
+        init_base_model_run = False
 
         if params["silent"]:
             iter_ = train_dataloader
