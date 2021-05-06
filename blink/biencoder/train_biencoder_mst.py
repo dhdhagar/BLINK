@@ -365,7 +365,7 @@ def main(params):
             else:
                 init_run_data['train_dict_index'] = train_dict_index
                 init_run_data['train_men_index'] = train_men_index
-            torch.save(init_run_data, init_run_pkl_path)
+            torch.save(init_run_data, init_run_pkl_path, pickle_protocol=pickle.HIGHEST_PROTOCOL)
 
         init_base_model_run = False
 
