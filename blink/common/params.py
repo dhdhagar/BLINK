@@ -266,6 +266,10 @@ class BlinkParser(argparse.ArgumentParser):
             "--pos_neg_loss", action="store_true",
             help="Whether to use both the positive and negative softmax values to compute the loss or to use only the positive",
         )
+        parser.add_argument(
+            "--force_exact_search", action="store_true",
+            help="Whether to run FAISS nearest-neighbour retrieval in exact-search (IndexFlatIP) mode",
+        )
 
     def add_eval_args(self, args=None):
         """
@@ -336,6 +340,10 @@ class BlinkParser(argparse.ArgumentParser):
         parser.add_argument(
             "--only_recall", action="store_true",
             help="Whether to run evaluation to only compute the recall metric for recall@{--recall_k}",
+        )
+        parser.add_argument(
+            "--force_exact_search", action="store_true",
+            help="Whether to run FAISS nearest-neighbour retrieval in exact-search (IndexFlatIP) mode",
         )
 
     def add_joint_train_args(self, args=None):

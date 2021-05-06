@@ -45,16 +45,16 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
 
     if use_types:
         print("Eval: Dictionary: Embedding and building index")
-        dict_embeds, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_data, force_exact_search=True)
+        dict_embeds, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_data, force_exact_search=params['force_exact_search'])
         print("Eval: Queries: Embedding and building index")
-        men_embeds, men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, valid_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=query_data, force_exact_search=True)
+        men_embeds, men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, valid_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=query_data, force_exact_search=params['force_exact_search'])
     else:
         print("Eval: Dictionary: Embedding and building index")
         dict_embeds, dict_index = data_process.embed_and_index(
-            reranker, valid_dict_vecs, 'candidate', n_gpu=n_gpu)
+            reranker, valid_dict_vecs, 'candidate', n_gpu=n_gpu, force_exact_search=params['force_exact_search'])
         print("Eval: Queries: Embedding and building index")
         men_embeds, men_index = data_process.embed_and_index(
-            reranker, valid_men_vecs, 'context', n_gpu=n_gpu)
+            reranker, valid_men_vecs, 'context', n_gpu=n_gpu, force_exact_search=params['force_exact_search'])
 
     for men_query_idx, men_embed in enumerate(tqdm(men_embeds, total=len(men_embeds), desc="Eval: Fetching k-NN")):
         men_embed = np.expand_dims(men_embed, axis=0)
@@ -327,11 +327,11 @@ def main(params):
 
         # Compute mention and entity embeddings at the start of each epoch
         if use_types:
-            train_dict_embeddings, train_dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_dictionary, force_exact_search=True)
-            train_men_embeddings, train_men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, train_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=train_processed_data, force_exact_search=True)
+            train_dict_embeddings, train_dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_dictionary, force_exact_search=params['force_exact_search'])
+            train_men_embeddings, train_men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, train_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=train_processed_data, force_exact_search=params['force_exact_search'])
         else:
-            train_dict_embeddings, train_dict_index = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu)
-            train_men_embeddings, train_men_index = data_process.embed_and_index(reranker, train_men_vecs, encoder_type="context", n_gpu=n_gpu)
+            train_dict_embeddings, train_dict_index = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, force_exact_search=params['force_exact_search'])
+            train_men_embeddings, train_men_index = data_process.embed_and_index(reranker, train_men_vecs, encoder_type="context", n_gpu=n_gpu, force_exact_search=params['force_exact_search'])
 
         if params["silent"]:
             iter_ = train_dataloader

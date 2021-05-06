@@ -343,10 +343,10 @@ def main(params):
         else:
             print("Dictionary: Embedding and building index")
             dict_embeds, dict_index = data_process.embed_and_index(
-                reranker, test_dict_vecs, 'candidate', n_gpu=n_gpu)
+                reranker, test_dict_vecs, 'candidate', n_gpu=n_gpu, force_exact_search=params['force_exact_search'])
             print("Queries: Embedding and building index")
             men_embeds, men_index = data_process.embed_and_index(
-                reranker, test_men_vecs, 'context', n_gpu=n_gpu)
+                reranker, test_men_vecs, 'context', n_gpu=n_gpu, force_exact_search=params['force_exact_search'])
 
         recall_accuracy = {2**i: 0 for i in range(int(math.log(params['recall_k'], 2)) + 1)}
         recall_idxs = [0.]*params['recall_k']
