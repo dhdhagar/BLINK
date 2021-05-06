@@ -281,9 +281,9 @@ def main(params):
     # custom_embeds = torch.load('models/trained/zeshel_og/eval/data_og/custom_embed.t7')
     # dict_idxs_by_type = torch.load('models/trained/zeshel_og/eval/data_og/dict_idx_mapping.t7')
     # test_dict_vecs = torch.load('models/trained/zeshel_og/eval/data_og/custom_test_ent_vecs.t7')
-    test_men_vecs = torch.load('models/trained/zeshel_og/eval/data_og/custom_test_men_vecs.t7')
+    # test_men_vecs = torch.load('models/trained/zeshel_og/eval/data_og/custom_test_men_vecs.t7')
     # world_to_type = {12:'forgotten_realms', 13:'lego', 14:'star_trek', 15:'yugioh'}                    
-    embed()
+    # embed()
 
     test_sampler = SequentialSampler(test_tensor_data)
     test_dataloader = DataLoader(
