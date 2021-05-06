@@ -1,6 +1,7 @@
 import os
 import json
 import pickle
+from tqdm import tqdm
 
 BLINK_ROOT = f'{os.path.abspath(os.path.dirname(__file__))}/../..'
 
