@@ -88,6 +88,10 @@ class BlinkParser(argparse.ArgumentParser):
             action="store_true",
             help="Whether the dataset is from zeroshot.",
         )
+        parser.add_argument(
+            "--embed_batch_size", default=768, type=int, 
+            help="Batch size per GPU to use for the embed_and_index method"
+        )
 
     def add_model_args(self, args=None):
         """

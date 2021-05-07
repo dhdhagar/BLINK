@@ -337,16 +337,16 @@ def main(params):
 
         if use_types:
             print("Dictionary: Embedding and building index")
-            dict_embeds, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, test_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=test_dictionary, force_exact_search=True)
+            dict_embeds, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, test_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=test_dictionary, force_exact_search=True, batch_size=params['embed_batch_size'])
             print("Queries: Embedding and building index")
-            men_embeds, men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, test_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=mention_data, force_exact_search=True)
+            men_embeds, men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, test_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=mention_data, force_exact_search=True, batch_size=params['embed_batch_size'])
         else:
             print("Dictionary: Embedding and building index")
             dict_embeds, dict_index = data_process.embed_and_index(
-                reranker, test_dict_vecs, 'candidate', n_gpu=n_gpu, force_exact_search=params['force_exact_search'])
+                reranker, test_dict_vecs, 'candidate', n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'])
             print("Queries: Embedding and building index")
             men_embeds, men_index = data_process.embed_and_index(
-                reranker, test_men_vecs, 'context', n_gpu=n_gpu, force_exact_search=params['force_exact_search'])
+                reranker, test_men_vecs, 'context', n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'])
 
         recall_accuracy = {2**i: 0 for i in range(int(math.log(params['recall_k'], 2)) + 1)}
         recall_idxs = [0.]*params['recall_k']
