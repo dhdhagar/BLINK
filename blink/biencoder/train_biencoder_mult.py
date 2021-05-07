@@ -26,7 +26,7 @@ from IPython import embed
 
 logger = None
 
-def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_gpu, entity_data, query_data, silent=False, use_types=False):
+def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_gpu, entity_data, query_data, silent=False, use_types=False, embed_batch_size=768, force_exact_search=False):
     torch.cuda.empty_cache()
 
     reranker.model.eval()
@@ -44,16 +44,16 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
 
     if use_types:
         print("Eval: Dictionary: Embedding and building index")
-        dict_embeds, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_data, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'])
+        dict_embeds, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_data, force_exact_search=force_exact_search, batch_size=embed_batch_size)
         print("Eval: Queries: Embedding and building index")
-        men_embeds, men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, valid_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=query_data, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'])
+        men_embeds, men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, valid_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=query_data, force_exact_search=force_exact_search, batch_size=embed_batch_size)
     else:
         print("Eval: Dictionary: Embedding and building index")
         dict_embeds, dict_index = data_process.embed_and_index(
-            reranker, valid_dict_vecs, 'candidate', n_gpu=n_gpu, batch_size=params['embed_batch_size'])
+            reranker, valid_dict_vecs, 'candidate', n_gpu=n_gpu, batch_size=embed_batch_size)
         print("Eval: Queries: Embedding and building index")
         men_embeds, men_index = data_process.embed_and_index(
-            reranker, valid_men_vecs, 'context', n_gpu=n_gpu, batch_size=params['embed_batch_size'])
+            reranker, valid_men_vecs, 'context', n_gpu=n_gpu, batch_size=embed_batch_size)
 
     for men_query_idx, men_embed in enumerate(tqdm(men_embeds, total=len(men_embeds), desc="Eval: Fetching k-NN")):
         men_embed = np.expand_dims(men_embed, axis=0)
@@ -111,7 +111,7 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
 
 # ARCHIVED: The evaluate function makes a prediction on a set of knn candidates for every mention
 def evaluate_ind_pred(
-    reranker, valid_dataloader, valid_dict_vecs, params, device, logger, knn, n_gpu, entity_data, query_data, use_types=False
+    reranker, valid_dataloader, valid_dict_vecs, params, device, logger, knn, n_gpu, entity_data, query_data, use_types=False, embed_batch_size=768
 ):
     reranker.model.eval()
     knn = max(16, 2*knn) # Accomodate the approximate-nature of the knn procedure by retrieving more samples and then filtering
@@ -121,9 +121,9 @@ def evaluate_ind_pred(
     nb_eval_steps = 0
 
     if not use_types:
-        valid_dict_embeddings, valid_dict_index = data_process.embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, batch_size=params['embed_batch_size'])
+        valid_dict_embeddings, valid_dict_index = data_process.embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, batch_size=embed_batch_size)
     else:
-        valid_dict_embeddings, valid_dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_data, batch_size=params['embed_batch_size'])
+        valid_dict_embeddings, valid_dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_data, batch_size=embed_batch_size)
 
     for step, batch in enumerate(iter_):
         batch = tuple(t.to(device) for t in batch)
@@ -352,7 +352,7 @@ def main(params):
 
     if params["only_evaluate"]:
         evaluate(
-            reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"], use_types=use_types
+            reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"], use_types=use_types, embed_batch_size=params['embed_batch_size'], force_exact_search=params["force_exact_search"]
         )
         exit()
 
@@ -473,7 +473,7 @@ def main(params):
             if (step + 1) % (params["eval_interval"] * grad_acc_steps) == 0:
                 logger.info("Evaluation on the development dataset")
                 evaluate(
-                    reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"], use_types=use_types
+                    reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"], use_types=use_types, embed_batch_size=params['embed_batch_size'], force_exact_search=params["force_exact_search"]
                 )
                 model.train()
                 logger.info("\n")
@@ -486,7 +486,7 @@ def main(params):
         logger.info(f"Model saved at {epoch_output_folder_path}")
 
         normalized_accuracy = evaluate(
-            reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"], use_types=use_types
+            reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"], use_types=use_types, embed_batch_size=params['embed_batch_size'], force_exact_search=params["force_exact_search"]
         )
 
         ls = [best_score, normalized_accuracy]
