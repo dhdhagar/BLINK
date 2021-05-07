@@ -391,7 +391,7 @@ def main(params):
             negative_dict_inputs = []
             negative_men_inputs = []
             
-            edge_limit = 256**2
+            edge_limit = 128**2
             for m_embed_idx, m_embed in enumerate(mention_embeddings):
                 mention_idx = int(mention_idxs[m_embed_idx])
                 gold_idxs = set(train_processed_data[mention_idx]['label_idxs'][:n_gold[m_embed_idx]])
