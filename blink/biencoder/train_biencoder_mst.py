@@ -390,7 +390,8 @@ def main(params):
             positive_idxs = []
             negative_dict_inputs = []
             negative_men_inputs = []
-
+            
+            edge_limit = 256**2
             for m_embed_idx, m_embed in enumerate(mention_embeddings):
                 mention_idx = int(mention_idxs[m_embed_idx])
                 gold_idxs = set(train_processed_data[mention_idx]['label_idxs'][:n_gold[m_embed_idx]])
@@ -399,10 +400,9 @@ def main(params):
                 else:
                     # Run MST on mention clusters of all the gold entities of the current query mention to find its positive edge
                     rows, cols, data, shape = [], [], [], (n_entities+n_mentions, n_entities+n_mentions)
-                    gold_cluster_mentions = []
+                    seen = set()
                     for cluster_ent in gold_idxs:
                         cluster_mens = train_gold_clusters[cluster_ent]
-                        gold_cluster_mentions += cluster_mens
                         for i in range(len(cluster_mens)):
                             from_node = n_entities + cluster_mens[i]
                             to_node = cluster_ent
@@ -413,17 +413,31 @@ def main(params):
                             # Add forward and reverse mention-mention links
                             for j in range(i+1, len(cluster_mens)):
                                 to_node = n_entities + cluster_mens[j]
-                                score = train_men_embeddings[from_node - n_entities] @ train_men_embeddings[to_node - n_entities]
-                                rows += [from_node, to_node]
-                                cols += [to_node, from_node]
-                                data += [score, score]
-                    gold_cluster_mentions = set(gold_cluster_mentions)
+                                if (from_node, to_node) not in seen:
+                                    score = train_men_embeddings[from_node - n_entities] @ train_men_embeddings[to_node - n_entities]
+                                    rows += [from_node, to_node]
+                                    cols += [to_node, from_node]
+                                    data += [score, score]
+                                    seen.add((from_node, to_node))
+                                    seen.add((to_node, from_node))
+                    
+                    # Restrict graph size to avoid computational blow-up
+                    if len(rows) > edge_limit:
+                        tuples = sorted(zip(rows, cols, data), key=lambda x: -x[2])
+                        keep = tuples[:edge_limit]
+                        # Retain outgoing edges of the query mention being processed
+                        for tup in tuples[edge_limit:]:
+                            if tup[0] == n_entities + mention_idx:
+                                keep.append(tup)
+                        rows, cols, data = zip(*keep)
+
                     # Find MST with entity constraint
-                    rows, cols, data = cluster_linking_partition(np.array(rows), np.array(cols), np.array(data), n_entities, directed=True, silent=True)
-                    assert len(gold_cluster_mentions) == len(rows)
+                    rows, cols, data = cluster_linking_partition(np.array(rows), np.array(cols), np.array(data), n_entities, directed=True, silent=True if len(rows) < edge_limit/2 else False)
                     # Store the computed positive edges for the mentions in the clusters if they have the same gold entities as the query mention
                     for i in range(len(rows)):
                         men_idx = rows[i] - n_entities
+                        if men_idx in gold_links:
+                            continue
                         assert men_idx >= 0
                         add_link = True
                         for l in train_processed_data[men_idx]['label_idxs'][:train_processed_data[men_idx]['n_labels']]:
@@ -431,7 +445,7 @@ def main(params):
                                 add_link = False
                                 break
                         if add_link:
-                            gold_links[rows[i] - n_entities] = cols[i]
+                            gold_links[men_idx] = cols[i]
                     gold_link_idx = gold_links[mention_idx]
                     
                 # Calculate the number of negative entities and mentions to fetch
