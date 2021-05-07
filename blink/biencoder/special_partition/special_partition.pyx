@@ -169,7 +169,7 @@ def cluster_linking_partition(rows, cols, data, n_entities, directed=True, dfs=T
     rows, cols, data = list(map(np.array, (_f_row, _f_col, _f_data)))
 
     # Sort data for efficient DFS
-    sort_order = lambda x: (x[0], -x[1]) if directed else (x[1], -x[0])
+    sort_order = lambda x: (x[0], x[1]*(-1 if dfs else 1)) if directed else (x[1], x[0]*(-1 if dfs else 1)) # For faster iterations: descending order for DFS, ascending order for BFS
     tuples = zip(rows, cols, data)
     tuples = sorted(tuples, key=sort_order)
     rows, cols, data = zip(*tuples)
