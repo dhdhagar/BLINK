@@ -39,7 +39,8 @@ def _build_adj_index(np.ndarray[INT_t, ndim=1] values,
 def _has_entity_in_component(list stack,
                              np.ndarray[INT_t, ndim=1] to_vertices,
                              np.ndarray[INT_t, ndim=2] adj_index,
-                             INT_t num_entities):
+                             INT_t num_entities,
+                             bint dfs):
     # Perform DFS to look for an entity
     cdef set visited = set()
     cdef bint found = False
@@ -47,8 +48,14 @@ def _has_entity_in_component(list stack,
     
     while len(stack) > 0:
         # Pop
-        node = stack[len(stack) - 1]
-        stack = stack[:len(stack) - 1]
+        if dfs:
+            # DFS
+            node = stack[len(stack) - 1]
+            stack = stack[:len(stack) - 1]
+        else:
+            # BFS
+            node = stack[0]
+            stack = stack[1:]
 
         # Check if node is an entity
         if node < num_entities:
@@ -75,6 +82,7 @@ def special_partition(np.ndarray[INT_t, ndim=1] row,
                       np.ndarray[INT_t, ndim=1] siamese_indices,
                       INT_t num_entities,
                       bint directed,
+                      bint dfs,
                       bint silent):
     cdef INT_t num_edges = row.shape[0]
     cdef np.ndarray[BOOL_t, ndim=1] keep_mask = np.ones([num_edges,], dtype=BOOL)
@@ -120,11 +128,11 @@ def special_partition(np.ndarray[INT_t, ndim=1] row,
 
         # Check if an entity can still be reached from r
         r_entity_reachable = _has_entity_in_component(
-            [r], tmp_graph, adj_index, num_entities)
+            [r], tmp_graph, adj_index, num_entities, dfs)
         # Undirected: Check if an entity can still be reached from c
         if not directed:
             c_entity_reachable = _has_entity_in_component(
-                [c], tmp_graph, adj_index, num_entities)
+                [c], tmp_graph, adj_index, num_entities, dfs)
 
         # Add (r,c) back if an entity cannot be reached from r or c (when undirected) without it
         if not (r_entity_reachable and c_entity_reachable):
@@ -138,7 +146,7 @@ def special_partition(np.ndarray[INT_t, ndim=1] row,
 
     return keep_mask
 
-def cluster_linking_partition(rows, cols, data, n_entities, directed=True, silent=False):
+def cluster_linking_partition(rows, cols, data, n_entities, directed=True, dfs=True, silent=False):
     assert rows.shape[0] == cols.shape[0] == data.shape[0]
     
     cdef np.ndarray[BOOL_t, ndim=1] keep_edge_mask
@@ -181,7 +189,7 @@ def cluster_linking_partition(rows, cols, data, n_entities, directed=True, silen
 
     # Determine which edges to keep in the partitioned graph
     keep_edge_mask = special_partition(
-        rows, cols, ordered_edge_idxs, siamese_idxs, n_entities, directed, silent)
+        rows, cols, ordered_edge_idxs, siamese_idxs, n_entities, directed, dfs, silent)
 
     # Return the edges of the partitioned graph
     return rows[keep_edge_mask], cols[keep_edge_mask], data[keep_edge_mask]

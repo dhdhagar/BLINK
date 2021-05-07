@@ -432,7 +432,13 @@ def main(params):
                         rows, cols, data = zip(*keep)
 
                     # Find MST with entity constraint
-                    rows, cols, data = cluster_linking_partition(np.array(rows), np.array(cols), np.array(data), n_entities, directed=True, silent=True if len(rows) < edge_limit/2 else False)
+                    rows, cols, data = cluster_linking_partition(np.array(rows), 
+                                                                 np.array(cols), 
+                                                                 np.array(data), 
+                                                                 n_entities, 
+                                                                 directed=True,
+                                                                 dfs=False,
+                                                                 silent=True if len(rows) < edge_limit/2 else False)
                     for i in range(len(rows)):
                         men_idx = rows[i] - n_entities
                         if men_idx in gold_links:
