@@ -14,6 +14,8 @@ from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler)
 from pytorch_transformers.optimization import WarmupLinearSchedule
 from tqdm import tqdm, trange
 from special_partition.special_partition import cluster_linking_partition
+from scipy.sparse.csgraph import minimum_spanning_tree
+from scipy.sparse import csr_matrix
 
 import blink.biencoder.data_process_mult as data_process
 import blink.biencoder.eval_cluster_linking as eval_cluster_linking
@@ -391,10 +393,13 @@ def main(params):
             negative_dict_inputs = []
             negative_men_inputs = []
             
-            edge_limit = 128**2
             for m_embed_idx, m_embed in enumerate(mention_embeddings):
                 mention_idx = int(mention_idxs[m_embed_idx])
                 gold_idxs = set(train_processed_data[mention_idx]['label_idxs'][:n_gold[m_embed_idx]])
+                
+                # TEMPORARY: Assuming that there is only 1 gold label, TODO: Incorporate multiple case
+                assert n_gold[m_embed_idx] == 1
+
                 if mention_idx in gold_links:
                     gold_link_idx = gold_links[mention_idx]
                 else:
@@ -409,36 +414,28 @@ def main(params):
                             # Add mention-entity link
                             rows.append(from_node)
                             cols.append(to_node)
-                            data.append(train_men_embeddings[from_node - n_entities] @ train_dict_embeddings[to_node])
+                            data.append(-1 * train_men_embeddings[from_node - n_entities] @ train_dict_embeddings[to_node])
                             # Add forward and reverse mention-mention links
                             for j in range(i+1, len(cluster_mens)):
                                 to_node = n_entities + cluster_mens[j]
                                 if (from_node, to_node) not in seen:
                                     score = train_men_embeddings[from_node - n_entities] @ train_men_embeddings[to_node - n_entities]
-                                    rows += [from_node, to_node]
-                                    cols += [to_node, from_node]
-                                    data += [score, score]
+                                    rows.append(from_node)
+                                    cols.append(to_node)
+                                    data.append(-1 * score) # Negatives needed for SciPy's Minimum Spanning Tree computation
                                     seen.add((from_node, to_node))
                                     seen.add((to_node, from_node))
-                    
-                    # Restrict graph size to avoid computational blow-up
-                    if len(rows) > edge_limit:
-                        tuples = sorted(zip(rows, cols, data), key=lambda x: -x[2])
-                        keep = tuples[:edge_limit]
-                        # Retain outgoing edges of the query mention being processed
-                        for tup in tuples[edge_limit:]:
-                            if tup[0] == n_entities + mention_idx:
-                                keep.append(tup)
-                        rows, cols, data = zip(*keep)
 
                     # Find MST with entity constraint
-                    rows, cols, data = cluster_linking_partition(np.array(rows), 
-                                                                 np.array(cols), 
-                                                                 np.array(data), 
+                    csr = csr_matrix((data, (rows, cols)), shape=shape)
+                    mst = minimum_spanning_tree(csr).tocoo()
+                    rows, cols, data = cluster_linking_partition(np.concatenate((mst.row, mst.col)), 
+                                                                 np.concatenate((mst.col,mst.row)), 
+                                                                 np.concatenate((-mst.data, -mst.data)), 
                                                                  n_entities, 
-                                                                 directed=True,
-                                                                 dfs=False,
-                                                                 silent=True if len(rows) < edge_limit/2 else False)
+                                                                 directed=True, 
+                                                                 silent=True)
+                    
                     for i in range(len(rows)):
                         men_idx = rows[i] - n_entities
                         if men_idx in gold_links:
