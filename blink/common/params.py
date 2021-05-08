@@ -274,6 +274,10 @@ class BlinkParser(argparse.ArgumentParser):
             "--force_exact_search", action="store_true",
             help="Whether to run FAISS nearest-neighbour retrieval in exact-search (IndexFlatIP) mode",
         )
+        parser.add_argument(
+            "--use_types_for_eval", action="store_true",
+            help="Whether to use type information during evaluation when --use_types is False",
+        )
 
     def add_eval_args(self, args=None):
         """
