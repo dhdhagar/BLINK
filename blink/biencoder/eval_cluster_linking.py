@@ -130,7 +130,7 @@ def partition_graph(graph, n_entities, directed, return_clusters=False):
             return_labels=True)
         # Store clusters of indices marked with labels with at least 2 connected components
         unique_cc_labels, cc_sizes = np.unique(cc_labels, return_counts=True)
-        filtered_labels = unique_cc_labels[cc_sizes > 1]
+        filtered_labels = unique_cc_labels[cc_sizes >= 2]
         clusters = defaultdict(list)
         for i, cc_label in enumerate(cc_labels):
             if cc_label in filtered_labels:
