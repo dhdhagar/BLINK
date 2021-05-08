@@ -435,6 +435,7 @@ def main(params):
                                                                  n_entities, 
                                                                  directed=True, 
                                                                  silent=True)
+                    assert np.array_equal(rows - n_entities, train_gold_clusters[cluster_ent])
                     
                     for i in range(len(rows)):
                         men_idx = rows[i] - n_entities
