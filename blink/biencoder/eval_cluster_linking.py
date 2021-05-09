@@ -423,8 +423,8 @@ def main(params):
     graph_mode = params.get('graph_mode', None)
     
     result_overview = {
-        'n_entities': results[0]['n_entities'],
-        'n_mentions': results[0]['n_mentions']
+        'n_entities': n_entities,
+        'n_mentions': n_mentions
     }
     results = {}
     if graph_mode is None or graph_mode not in ['directed', 'undirected']:
