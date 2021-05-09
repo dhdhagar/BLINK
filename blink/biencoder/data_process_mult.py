@@ -220,20 +220,27 @@ def build_index(embeds, force_exact_search):
         else:
             embeds = np.array(embeds)
     # Build index
+    gpu_res = faiss.StandardGpuResources()
+
     d = embeds.shape[1]
     nembeds = embeds.shape[0]
     if nembeds <= 10000 or force_exact_search:  # if the number of embeddings is small, don't approximate
-        index = faiss.IndexFlatIP(d)
+        index = faiss.GpuIndexFlatIP(gpu_res, d) 
+        # index = faiss.IndexFlatIP(d)
         index.add(embeds)
     else:
         # number of quantized cells
         nlist = int(math.floor(math.sqrt(nembeds)))
         # number of the quantized cells to probe
         nprobe = int(math.floor(math.sqrt(nlist)))
-        quantizer = faiss.IndexFlatIP(d)
-        index = faiss.IndexIVFFlat(
-            quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
+        quantizer = faiss.GpuIndexFlatIP(gpu_res, d)
+        # quantizer = faiss.IndexFlatIP(d)
+        index = faiss.GpuIndexIVFFlat(
+            gpu_res, quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
         )
+        # index = faiss.IndexIVFFlat(
+        #     quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
+        # )
         index.train(embeds)
         index.add(embeds)
         index.nprobe = nprobe
