@@ -321,6 +321,10 @@ class BlinkParser(argparse.ArgumentParser):
         )
         # Cluster-linking arguments
         parser.add_argument(
+            "--graph_mode", type=str, default=None,
+            help="Whether to run evaluation in 'directed' or 'undirected' mode. Run both if not specified",
+        )
+        parser.add_argument(
             "--filter_unlabeled", action="store_true",
             help="Whether to filter mentions that have no labeled entities from the test set",
         )

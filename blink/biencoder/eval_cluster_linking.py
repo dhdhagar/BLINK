@@ -420,14 +420,19 @@ def main(params):
             pickle.dump(joint_graphs, write_handle,
                         protocol=pickle.HIGHEST_PROTOCOL)
 
+    graph_mode = params.get('graph_mode', None)
+    
     result_overview = {
         'n_entities': results[0]['n_entities'],
         'n_mentions': results[0]['n_mentions']
     }
-    results = {
-        'directed': [],
-        'undirected': []
-    }
+    results = {}
+    if graph_mode is None or graph_mode not in ['directed', 'undirected']:
+        results['directed'] = []
+        results['undirected'] = []
+    else:
+        results[graph_mode] = []
+
     for mode in results:
         print(f'Evaluation mode: {mode}')
         for k in joint_graphs:
