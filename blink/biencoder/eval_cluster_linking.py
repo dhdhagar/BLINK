@@ -435,7 +435,7 @@ def main(params):
         results[graph_mode] = []
 
     for mode in results:
-        print(f'Evaluation mode: {mode}')
+        print(f'\nEvaluation mode: {mode.upper()}')
         for k in joint_graphs:
             print(f"\nGraph (k={k}):")
             # Partition graph based on cluster-linking constraints
