@@ -244,9 +244,8 @@ def main(params):
     n_gpu = reranker.n_gpu
 
     knn = params["knn"]
-    directed_graph = params["directed_graph"]
     use_types = params["use_types"]
-    data_split = params["data_split"] # Parameter default is "test"
+    data_split = params["data_split"] # Default = "test"
 
     # Load test data
     entity_dictionary_loaded = False
@@ -421,25 +420,29 @@ def main(params):
             pickle.dump(joint_graphs, write_handle,
                         protocol=pickle.HIGHEST_PROTOCOL)
 
-    results = []
-    for k in joint_graphs:
-        print(f"\nGraph (k={k}):")
-        # Partition graph based on cluster-linking constraints
-        partitioned_graph, clusters = partition_graph(
-            joint_graphs[k], n_entities, directed_graph, return_clusters=True)
-        # Infer predictions from clusters
-        result = analyzeClusters(clusters, test_dictionary, mention_data, k)
-        # Store result
-        results.append(result)
+    result_overview = {
+        'n_entities': results[0]['n_entities'],
+        'n_mentions': results[0]['n_mentions']
+    }
+    results = {
+        'directed': [],
+        'undirected': []
+    }
+    for mode in results:
+        print(f'Evaluation mode: {mode}')
+        for k in joint_graphs:
+            print(f"\nGraph (k={k}):")
+            # Partition graph based on cluster-linking constraints
+            partitioned_graph, clusters = partition_graph(
+                joint_graphs[k], n_entities, mode == 'directed', return_clusters=True)
+            # Infer predictions from clusters
+            result = analyzeClusters(clusters, test_dictionary, mention_data, k)
+            # Store result
+            results[mode].append(result)
 
     # Store results
     output_file_name = os.path.join(
         output_path, f"eval_results_{__import__('calendar').timegm(__import__('time').gmtime())}")
-    result_overview = {
-        'n_entities': results[0]['n_entities'],
-        'n_mentions': results[0]['n_mentions'],
-        'directed': directed_graph
-    }
 
     try:
         for recall_k in recall_accuracy:
@@ -447,14 +450,17 @@ def main(params):
     except:
         logger.info("Recall data not available since graphs were loaded from disk")
     
-    for r in results:
-        k = r['knn_mentions']
-        result_overview[f'accuracy@knn{k}'] = r['accuracy']
-        logger.info(f"accuracy@knn{k} = {r['accuracy']}")
-        output_file = f'{output_file_name}-{k}.json'
-        with open(output_file, 'w') as f:
-            json.dump(r, f, indent=2)
-            print(f"\nPredictions @knn{k} saved at: {output_file}")
+    for mode in results:
+        mode_results = results[mode]
+        result_overview[mode] = {}
+        for r in mode_results:
+            k = r['knn_mentions']
+            result_overview[mode][f'accuracy@knn{k}'] = r['accuracy']
+            logger.info(f"{mode} accuracy@knn{k} = {r['accuracy']}")
+            output_file = f'{output_file_name}-{mode}-{k}.json'
+            with open(output_file, 'w') as f:
+                json.dump(r, f, indent=2)
+                print(f"\nPredictions ({mode}) @knn{k} saved at: {output_file}")
     with open(f'{output_file_name}.json', 'w') as f:
         json.dump(result_overview, f, indent=2)
         print(f"\nPredictions overview saved at: {output_file_name}.json")

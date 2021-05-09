@@ -329,11 +329,6 @@ class BlinkParser(argparse.ArgumentParser):
             help="Number of kNN mention candidates to fetch per mention query during inference",
         )
         parser.add_argument(
-            "--directed_graph",
-            action="store_true",
-            help="Whether to construct a directed graph for cluster-linking inference",
-        )
-        parser.add_argument(
             "--data_split", type=str, default="test",
             help="The split of the dataset to run evaluation on",
         )
