@@ -161,13 +161,13 @@ def process_mention_data(
             "label_idx": [label_idx],
         }
 
-        type_key = "world" if "world" in sample else "type"
-        if type_key in sample:
-            src = sample[type_key]
-            src = world_to_id[src]
-            record["src"] = [src]
-        else:
-            record["src"] = [0]     # pseudo src
+        # type_key = "world" if "world" in sample else "type"
+        # if type_key in sample:
+        #     src = sample[type_key]
+        #     src = world_to_id[src]
+        #     record["src"] = [src]
+        # else:
+        #     record["src"] = [0]     # pseudo src
 
         processed_samples.append(record)
 
@@ -190,9 +190,9 @@ def process_mention_data(
     cand_vecs = torch.tensor(
         select_field(processed_samples, "label", "ids"), dtype=torch.long,
     )
-    src_vecs = torch.tensor(
-        select_field(processed_samples, "src"), dtype=torch.long,
-    )
+    # src_vecs = torch.tensor(
+    #     select_field(processed_samples, "src"), dtype=torch.long,
+    # )
     label_idx = torch.tensor(
         select_field(processed_samples, "label_idx"), dtype=torch.long,
     )
@@ -202,6 +202,6 @@ def process_mention_data(
         "label_idx": label_idx,
     }
 
-    data["src"] = src_vecs
-    tensor_data = TensorDataset(context_vecs, cand_vecs, src_vecs, label_idx)
+    # data["src"] = src_vecs
+    tensor_data = TensorDataset(context_vecs, cand_vecs, label_idx) # src_vecs
     return data, tensor_data
