@@ -26,7 +26,7 @@ from IPython import embed
 
 logger = None
 
-def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_gpu, entity_data, query_data, silent=False, use_types=False, embed_batch_size=768, force_exact_search=False):
+def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_gpu, entity_data, query_data, silent=False, use_types=False, embed_batch_size=768, force_exact_search=False, probe_mult_factor=1):
     torch.cuda.empty_cache()
 
     reranker.model.eval()
@@ -44,16 +44,16 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
 
     if use_types:
         print("Eval: Dictionary: Embedding and building index")
-        dict_embeds, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_data, force_exact_search=force_exact_search, batch_size=embed_batch_size)
+        dict_embeds, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_data, force_exact_search=force_exact_search, batch_size=embed_batch_size, probe_mult_factor=probe_mult_factor)
         print("Eval: Queries: Embedding and building index")
-        men_embeds, men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, valid_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=query_data, force_exact_search=force_exact_search, batch_size=embed_batch_size)
+        men_embeds, men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, valid_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=query_data, force_exact_search=force_exact_search, batch_size=embed_batch_size, probe_mult_factor=probe_mult_factor)
     else:
         print("Eval: Dictionary: Embedding and building index")
         dict_embeds, dict_index = data_process.embed_and_index(
-            reranker, valid_dict_vecs, 'candidate', n_gpu=n_gpu, batch_size=embed_batch_size)
+            reranker, valid_dict_vecs, 'candidate', n_gpu=n_gpu, batch_size=embed_batch_size, probe_mult_factor=probe_mult_factor)
         print("Eval: Queries: Embedding and building index")
         men_embeds, men_index = data_process.embed_and_index(
-            reranker, valid_men_vecs, 'context', n_gpu=n_gpu, batch_size=embed_batch_size)
+            reranker, valid_men_vecs, 'context', n_gpu=n_gpu, batch_size=embed_batch_size, probe_mult_factor=probe_mult_factor)
 
     for men_query_idx, men_embed in enumerate(tqdm(men_embeds, total=len(men_embeds), desc="Eval: Fetching k-NN")):
         men_embed = np.expand_dims(men_embed, axis=0)
@@ -139,7 +139,7 @@ def evaluate_ind_pred(
                 if use_types:
                     entity_type = query_data[mention_idxs[i]]['type']
                     valid_dict_index = valid_dict_indexes[entity_type]
-                _, knn_dict_idxs = valid_dict_index.search(np.expand_dims(m_embed, axis=0), knn)
+                _, knn_dict_idxs = valid_dict_index.search(np.expand_dims(m_embed, axis=0).astype('float32'), knn)
                 knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()
                 if use_types:
                     # Map type-specific indices to the entire dictionary
@@ -352,7 +352,7 @@ def main(params):
 
     if params["only_evaluate"]:
         evaluate(
-            reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"], use_types=use_types or params["use_types_for_eval"], embed_batch_size=params['embed_batch_size'], force_exact_search=use_types or params["use_types_for_eval"] or params["force_exact_search"]
+            reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"], use_types=use_types or params["use_types_for_eval"], embed_batch_size=params['embed_batch_size'], force_exact_search=use_types or params["use_types_for_eval"] or params["force_exact_search"], probe_mult_factor=params['probe_mult_factor']
         )
         exit()
 
@@ -393,15 +393,15 @@ def main(params):
         if use_types:
             if load_stored_data:
                 train_dict_embeddings, dict_idxs_by_type = init_run_data['train_dict_embeddings'], init_run_data['dict_idxs_by_type']
-                train_dict_indexes = data_process.get_index_from_embeds(train_dict_embeddings, dict_idxs_by_type, force_exact_search=params['force_exact_search'])
+                train_dict_indexes = data_process.get_index_from_embeds(train_dict_embeddings, dict_idxs_by_type, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
             else:
-                train_dict_embeddings, train_dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_dictionary, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'])
+                train_dict_embeddings, train_dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_dictionary, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
         else:
             if load_stored_data:
                 train_dict_embeddings = init_run_data['train_dict_embeddings']
-                train_dict_index = data_process.get_index_from_embeds(train_dict_embeddings, force_exact_search=params['force_exact_search'])
+                train_dict_index = data_process.get_index_from_embeds(train_dict_embeddings, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
             else:
-                train_dict_embeddings, train_dict_index = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'])
+                train_dict_embeddings, train_dict_index = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
         if load_stored_data:
             train_men_embeddings = init_run_data['train_men_embeddings']
         else:
@@ -430,7 +430,7 @@ def main(params):
                 if use_types:
                     entity_type = train_processed_data[mention_idxs[i]]['type']
                     train_dict_index = train_dict_indexes[entity_type]
-                _, knn_dict_idxs = train_dict_index.search(np.expand_dims(m_embed, axis=0), (knn + int(n_gold[i]) - 1)) # Fetch NNs to ensure one entity per row
+                _, knn_dict_idxs = train_dict_index.search(np.expand_dims(m_embed, axis=0).astype('float32'), (knn + int(n_gold[i]) - 1)) # Fetch NNs to ensure one entity per row
                 knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()
                 if use_types:
                     # Map type-specific indices to the entire dictionary
@@ -473,7 +473,7 @@ def main(params):
             if (step + 1) % (params["eval_interval"] * grad_acc_steps) == 0:
                 logger.info("Evaluation on the development dataset")
                 evaluate(
-                    reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"], use_types=use_types or params["use_types_for_eval"], embed_batch_size=params['embed_batch_size'], force_exact_search=use_types or params["use_types_for_eval"] or params["force_exact_search"]
+                    reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"], use_types=use_types or params["use_types_for_eval"], embed_batch_size=params['embed_batch_size'], force_exact_search=use_types or params["use_types_for_eval"] or params["force_exact_search"], probe_mult_factor=params['probe_mult_factor']
                 )
                 model.train()
                 logger.info("\n")
@@ -486,7 +486,7 @@ def main(params):
         logger.info(f"Model saved at {epoch_output_folder_path}")
 
         normalized_accuracy = evaluate(
-            reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"], use_types=use_types or params["use_types_for_eval"], embed_batch_size=params['embed_batch_size'], force_exact_search=use_types or params["use_types_for_eval"] or params["force_exact_search"]
+            reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"], use_types=use_types or params["use_types_for_eval"], embed_batch_size=params['embed_batch_size'], force_exact_search=use_types or params["use_types_for_eval"] or params["force_exact_search"], probe_mult_factor=params['probe_mult_factor']
         )
 
         ls = [best_score, normalized_accuracy]

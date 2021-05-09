@@ -88,10 +88,6 @@ class BlinkParser(argparse.ArgumentParser):
             action="store_true",
             help="Whether the dataset is from zeroshot.",
         )
-        parser.add_argument(
-            "--embed_batch_size", default=768, type=int, 
-            help="Batch size per GPU to use for the embed_and_index method"
-        )
 
     def add_model_args(self, args=None):
         """
@@ -171,6 +167,14 @@ class BlinkParser(argparse.ArgumentParser):
             default=None,
             type=str,
             help="The directory from which to load intermediate processed data to skip redundant computation.",
+        )
+        parser.add_argument(
+            "--embed_batch_size", default=768, type=int, 
+            help="Batch size per GPU to use for the embed_and_index method"
+        )
+        parser.add_argument(
+            "--probe_mult_factor", default=1, type=int, 
+            help="Mutliplication factor to the square root of the total search space used in FAISS.GpuIndexIVFFlat.nprobe to indicate the number of vectors to compare during search"
         )
 
 

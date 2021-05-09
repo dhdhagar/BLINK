@@ -13,6 +13,7 @@ from torch.utils.data import (DataLoader, SequentialSampler)
 import numpy as np
 from tqdm import tqdm
 import pickle
+import faiss
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 from special_partition.special_partition import cluster_linking_partition
@@ -64,19 +65,19 @@ def get_query_nn(model,
     k = searchK if searchK is not None else max(16, 2*knn)
 
     # Find k nearest neighbours
-    _, nn_idxs = index.search(q_embed, k)
+    scores, nn_idxs = index.search(q_embed.astype('float32'), k)
     nn_idxs = nn_idxs.astype(np.int64).flatten()
     if type_idx_mapping is not None:
         nn_idxs = type_idx_mapping[nn_idxs]
     nn_embeds = torch.tensor(embeds[nn_idxs]).cuda()
 
     # Compute query-candidate similarity scores
-    scores = torch.flatten(
-        torch.mm(torch.tensor(q_embed).cuda(), nn_embeds.T)).cpu()
+    scores = torch.flatten(scores).cpu()
+        # torch.mm(torch.tensor(q_embed).cuda(), nn_embeds.T)).cpu()
 
     # Sort the candidates by descending order of scores
-    nn_idxs, scores = zip(
-        *sorted(zip(nn_idxs, scores), key=lambda x: -x[1]))
+    # nn_idxs, scores = zip(
+    #     *sorted(zip(nn_idxs, scores), key=lambda x: -x[1]))
 
     if gold_idxs is not None:
         # Calculate the knn index at which the gold cui is found (-1 if not found)
@@ -336,16 +337,16 @@ def main(params):
 
         if use_types:
             print("Dictionary: Embedding and building index")
-            dict_embeds, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, test_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=test_dictionary, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'])
+            dict_embeds, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, test_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=test_dictionary, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
             print("Queries: Embedding and building index")
-            men_embeds, men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, test_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=mention_data, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'])
+            men_embeds, men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, test_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=mention_data, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
         else:
             print("Dictionary: Embedding and building index")
             dict_embeds, dict_index = data_process.embed_and_index(
-                reranker, test_dict_vecs, 'candidate', n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'])
+                reranker, test_dict_vecs, 'candidate', n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
             print("Queries: Embedding and building index")
             men_embeds, men_index = data_process.embed_and_index(
-                reranker, test_men_vecs, 'context', n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'])
+                reranker, test_men_vecs, 'context', n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
 
         recall_accuracy = {2**i: 0 for i in range(int(math.log(params['recall_k'], 2)) + 1)}
         recall_idxs = [0.]*params['recall_k']

@@ -213,15 +213,16 @@ def compute_gold_clusters(mention_data):
             clusters[label_idx].append(men_idx)
     return clusters
 
-def build_index(embeds, force_exact_search):
+def build_index(embeds, force_exact_search, probe_mult_factor=1):
     if type(embeds) is not np.ndarray:
         if torch.is_tensor(embeds):
             embeds = embeds.numpy()
         else:
             embeds = np.array(embeds)
+    embeds = embeds.astype('float32')
+    
     # Build index
     gpu_res = faiss.StandardGpuResources()
-
     d = embeds.shape[1]
     nembeds = embeds.shape[0]
     if nembeds <= 10000 or force_exact_search:  # if the number of embeddings is small, don't approximate
@@ -232,11 +233,10 @@ def build_index(embeds, force_exact_search):
         # number of quantized cells
         nlist = int(math.floor(math.sqrt(nembeds)))
         # number of the quantized cells to probe
-        nprobe = int(math.floor(math.sqrt(nlist)))
-        quantizer = faiss.GpuIndexFlatIP(gpu_res, d)
+        nprobe = int(math.floor(math.sqrt(nlist) * probe_mult_factor))
         # quantizer = faiss.IndexFlatIP(d)
         index = faiss.GpuIndexIVFFlat(
-            gpu_res, quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
+            gpu_res, d, nlist, faiss.METRIC_INNER_PRODUCT
         )
         # index = faiss.IndexIVFFlat(
         #     quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
@@ -246,7 +246,7 @@ def build_index(embeds, force_exact_search):
         index.nprobe = nprobe
     return index
 
-def embed_and_index(model, token_id_vecs, encoder_type, batch_size=768, n_gpu=1, only_embed=False, corpus=None, force_exact_search=False):
+def embed_and_index(model, token_id_vecs, encoder_type, batch_size=768, n_gpu=1, only_embed=False, corpus=None, force_exact_search=False, probe_mult_factor=1):
     with torch.no_grad():
         if encoder_type == 'context':
             encoder = model.encode_context
@@ -271,7 +271,7 @@ def embed_and_index(model, token_id_vecs, encoder_type, batch_size=768, n_gpu=1,
 
         if corpus is None:
             # When "use_types" is False
-            index = build_index(embeds, force_exact_search)
+            index = build_index(embeds, force_exact_search, probe_mult_factor=probe_mult_factor)
             return embeds, index
         
         # Build type-specific search indexes
@@ -283,15 +283,15 @@ def embed_and_index(model, token_id_vecs, encoder_type, batch_size=768, n_gpu=1,
                 corpus_idxs[ent_type] = []
             corpus_idxs[ent_type].append(i)
         for ent_type in corpus_idxs:
-            search_indexes[ent_type] = build_index(embeds[corpus_idxs[ent_type]], force_exact_search)
+            search_indexes[ent_type] = build_index(embeds[corpus_idxs[ent_type]], force_exact_search, probe_mult_factor=probe_mult_factor)
             corpus_idxs[ent_type] = np.array(corpus_idxs[ent_type])
         return embeds, search_indexes, corpus_idxs
 
-def get_index_from_embeds(embeds, corpus_idxs=None, force_exact_search=False):
+def get_index_from_embeds(embeds, corpus_idxs=None, force_exact_search=False, probe_mult_factor=1):
     if corpus_idxs is None:
-        index = build_index(embeds, force_exact_search)
+        index = build_index(embeds, force_exact_search, probe_mult_factor=probe_mult_factor)
         return index
     search_indexes = {}
     for ent_type in corpus_idxs:
-        search_indexes[ent_type] = build_index(embeds[corpus_idxs[ent_type]], force_exact_search)
+        search_indexes[ent_type] = build_index(embeds[corpus_idxs[ent_type]], force_exact_search, probe_mult_factor=probe_mult_factor)
     return search_indexes
