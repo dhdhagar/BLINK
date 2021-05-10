@@ -138,7 +138,7 @@ class BiEncoderRanker(torch.nn.Module):
         )
         if requires_grad:
             return embedding_context
-        return embedding_context.cpu().detach()
+        return embedding_context.detach().cpu()
 
     def encode_candidate(self, cands, requires_grad=False):
         token_idx_cands, segment_idx_cands, mask_cands = to_bert_input(
@@ -149,9 +149,7 @@ class BiEncoderRanker(torch.nn.Module):
         )
         if requires_grad:
             return embedding_cands
-        return embedding_cands.cpu().detach()
-        # TODO: why do we need cpu here?
-        # return embedding_cands
+        return embedding_cands.detach().cpu()
 
     # Score candidates given context input and label input
     # If cand_encs is provided (pre-computed), cand_vecs is ignored

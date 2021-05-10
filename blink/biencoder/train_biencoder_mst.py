@@ -459,9 +459,9 @@ def main(params):
                     entity_type = train_processed_data[mention_idxs[m_embed_idx]]['type']
                     train_dict_index = train_dict_indexes[entity_type]
                     train_men_index = train_men_indexes[entity_type]
-                _, knn_dict_idxs = train_dict_index.search(np.expand_dims(m_embed, axis=0).astype('float32'), knn_dict + int(n_gold[m_embed_idx]))
+                _, knn_dict_idxs = train_dict_index.search(np.expand_dims(m_embed, axis=0), knn_dict + int(n_gold[m_embed_idx]))
                 knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()
-                _, knn_men_idxs = train_men_index.search(np.expand_dims(m_embed, axis=0).astype('float32'), knn_men + sum([len(train_gold_clusters[gi]) for gi in gold_idxs]))
+                _, knn_men_idxs = train_men_index.search(np.expand_dims(m_embed, axis=0), knn_men + sum([len(train_gold_clusters[gi]) for gi in gold_idxs]))
                 knn_men_idxs = knn_men_idxs.astype(np.int64).flatten()
                 if use_types:
                     # Map type-specific indices back to the entire list

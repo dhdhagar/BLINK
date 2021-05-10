@@ -65,11 +65,11 @@ def get_query_nn(model,
     k = searchK if searchK is not None else max(16, 2*knn)
 
     # Find k nearest neighbours
-    scores, nn_idxs = index.search(q_embed.astype('float32'), k)
+    scores, nn_idxs = index.search(q_embed, k)
     nn_idxs = nn_idxs.astype(np.int64).flatten()
     if type_idx_mapping is not None:
         nn_idxs = type_idx_mapping[nn_idxs]
-    nn_embeds = torch.tensor(embeds[nn_idxs]).cuda()
+    # nn_embeds = torch.tensor(embeds[nn_idxs]).cuda()
 
     # Compute query-candidate similarity scores
     scores = torch.tensor(scores.flatten())
