@@ -13,7 +13,6 @@ from torch.utils.data import (DataLoader, SequentialSampler)
 import numpy as np
 from tqdm import tqdm
 import pickle
-import faiss
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 from special_partition.special_partition import cluster_linking_partition
@@ -65,19 +64,19 @@ def get_query_nn(model,
     k = searchK if searchK is not None else max(16, 2*knn)
 
     # Find k nearest neighbours
-    scores, nn_idxs = index.search(q_embed, k)
+    _, nn_idxs = index.search(q_embed, k)
     nn_idxs = nn_idxs.astype(np.int64).flatten()
     if type_idx_mapping is not None:
         nn_idxs = type_idx_mapping[nn_idxs]
-    # nn_embeds = torch.tensor(embeds[nn_idxs]).cuda()
+    nn_embeds = torch.tensor(embeds[nn_idxs]).cuda()
 
     # Compute query-candidate similarity scores
-    scores = torch.tensor(scores.flatten())
-        # torch.mm(torch.tensor(q_embed).cuda(), nn_embeds.T)).cpu()
+    scores = torch.flatten(
+        torch.mm(torch.tensor(q_embed).cuda(), nn_embeds.T)).cpu()
 
     # Sort the candidates by descending order of scores
-    # nn_idxs, scores = zip(
-    #     *sorted(zip(nn_idxs, scores), key=lambda x: -x[1]))
+    nn_idxs, scores = zip(
+        *sorted(zip(nn_idxs, scores), key=lambda x: -x[1]))
 
     if gold_idxs is not None:
         # Calculate the knn index at which the gold cui is found (-1 if not found)
