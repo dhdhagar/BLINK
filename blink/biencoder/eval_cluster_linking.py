@@ -224,7 +224,6 @@ def analyzeClusters(clusters, dictionary, queries, knn):
 
     return results
 
-
 def main(params):
     output_path = params["output_path"]
     if not os.path.exists(output_path):
@@ -343,9 +342,17 @@ def main(params):
         if use_types:
             if embed_data is not None:
                 print('Loading stored embeddings and computing indexes')
-                dict_embeds, dict_idxs_by_type = embed_data['dict_embeds'], embed_data['dict_idxs_by_type']
+                dict_embeds = embed_data['dict_embeds']
+                if 'dict_idxs_by_type' in embed_data:
+                    dict_idxs_by_type = embed_data['dict_idxs_by_type']
+                else:
+                    dict_idxs_by_type = data_process.get_idxs_by_type(test_dictionary)
                 dict_indexes = data_process.get_index_from_embeds(dict_embeds, dict_idxs_by_type, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
-                men_embeds, men_idxs_by_type = embed_data['men_embeds'], embed_data['men_idxs_by_type']
+                men_embeds = embed_data['men_embeds']
+                if 'men_idxs_by_type' in embed_data:
+                    men_idxs_by_type = embed_data['men_idxs_by_type']
+                else:
+                    men_idxs_by_type = data_process.get_idxs_by_type(mention_data)
                 men_indexes = data_process.get_index_from_embeds(men_embeds, men_idxs_by_type, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
             else:
                 print("Dictionary: Embedding and building index")

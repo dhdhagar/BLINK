@@ -289,3 +289,14 @@ def get_index_from_embeds(embeds, corpus_idxs=None, force_exact_search=False, pr
     for ent_type in corpus_idxs:
         search_indexes[ent_type] = build_index(embeds[corpus_idxs[ent_type]], force_exact_search, probe_mult_factor=probe_mult_factor)
     return search_indexes
+
+def get_idxs_by_type(corpus):
+    corpus_idxs = {}
+    for i,e in enumerate(corpus):
+        ent_type = e['type']
+        if ent_type not in corpus_idxs:
+            corpus_idxs[ent_type] = []
+        corpus_idxs[ent_type].append(i)
+    for ent_type in corpus_idxs:
+        corpus_idxs[ent_type] = np.array(corpus_idxs[ent_type])
+    return corpus_idxs
