@@ -8,6 +8,7 @@
 import os
 import json
 import math
+import time
 import torch
 from torch.utils.data import (DataLoader, SequentialSampler)
 import numpy as np
@@ -315,6 +316,8 @@ def main(params):
     # Store the maximum evaluation k
     max_knn = knn_vals[-1]
 
+    time_start = time.time()
+
     # Check if graphs are already built
     graph_path = os.path.join(output_path, 'graphs.pickle')
     if not params['only_recall'] and os.path.isfile(graph_path):
@@ -483,6 +486,8 @@ def main(params):
             # Store result
             results[mode].append(result)
 
+    execution_time = (time.time() - time_start) / 60
+
     # Store results
     output_file_name = os.path.join(
         output_path, f"eval_results_{__import__('calendar').timegm(__import__('time').gmtime())}")
@@ -507,6 +512,7 @@ def main(params):
     with open(f'{output_file_name}.json', 'w') as f:
         json.dump(result_overview, f, indent=2)
         print(f"\nPredictions overview saved at: {output_file_name}.json")
+    logger.info("\nThe evaluation took {} minutes\n".format(execution_time))
 
 
 if __name__ == "__main__":
