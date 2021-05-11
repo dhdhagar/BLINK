@@ -334,18 +334,49 @@ def main(params):
                 'shape': (n_entities+n_mentions, n_entities+n_mentions)
             }
 
+        # Check and load stored embedding data
+        embed_data_path = os.path.join(output_path, 'embed_data.t7')
+        embed_data = None
+        if os.path.isfile(embed_data_path):
+            embed_data = torch.load(embed_data_path)
+
         if use_types:
-            print("Dictionary: Embedding and building index")
-            dict_embeds, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, test_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=test_dictionary, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
-            print("Queries: Embedding and building index")
-            men_embeds, men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, test_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=mention_data, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
+            if embed_data is not None:
+                print('Loading stored embeddings and computing indexes')
+                dict_embeds, dict_idxs_by_type = embed_data['dict_embeds'], embed_data['dict_idxs_by_type']
+                dict_indexes = data_process.get_index_from_embeds(dict_embeds, dict_idxs_by_type, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
+                men_embeds, men_idxs_by_type = embed_data['men_embeds'], embed_data['men_idxs_by_type']
+                men_indexes = data_process.get_index_from_embeds(men_embeds, men_idxs_by_type, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
+            else:
+                print("Dictionary: Embedding and building index")
+                dict_embeds, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, test_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=test_dictionary, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
+                print("Queries: Embedding and building index")
+                men_embeds, men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, test_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=mention_data, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
         else:
-            print("Dictionary: Embedding and building index")
-            dict_embeds, dict_index = data_process.embed_and_index(
-                reranker, test_dict_vecs, 'candidate', n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
-            print("Queries: Embedding and building index")
-            men_embeds, men_index = data_process.embed_and_index(
-                reranker, test_men_vecs, 'context', n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
+            if embed_data is not None:
+                print('Loading stored embeddings and computing indexes')
+                dict_embeds = embed_data['dict_embeds']
+                dict_index = data_process.get_index_from_embeds(dict_embeds, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
+                men_embeds = embed_data['men_embeds']
+                men_index = data_process.get_index_from_embeds(men_embeds, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
+            else:
+                print("Dictionary: Embedding and building index")
+                dict_embeds, dict_index = data_process.embed_and_index(
+                    reranker, test_dict_vecs, 'candidate', n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
+                print("Queries: Embedding and building index")
+                men_embeds, men_index = data_process.embed_and_index(
+                    reranker, test_men_vecs, 'context', n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
+
+        # Save computed embedding data if not loaded from disk
+        if embed_data is None:
+            embed_data = {}
+            embed_data['dict_embeds'] = dict_embeds
+            embed_data['men_embeds'] = men_embeds
+            if use_types:
+                embed_data['dict_idxs_by_type'] = dict_idxs_by_type
+                embed_data['men_idxs_by_type'] = men_idxs_by_type
+            # NOTE: Cannot pickle faiss index because it is a SwigPyObject
+            torch.save(embed_data, embed_data_path, pickle_protocol=pickle.HIGHEST_PROTOCOL)
 
         recall_accuracy = {2**i: 0 for i in range(int(math.log(params['recall_k'], 2)) + 1)}
         recall_idxs = [0.]*params['recall_k']
