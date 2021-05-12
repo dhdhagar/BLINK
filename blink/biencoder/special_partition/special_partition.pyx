@@ -175,6 +175,7 @@ def cluster_linking_partition(rows, cols, data, n_entities, directed=True, dfs=T
         shape = int(max(np.max(rows), np.max(cols)))
         shape = (shape, shape)
         csr = csr_matrix((-data, (rows, cols)), shape=shape)
+        embed()
         mst = minimum_spanning_tree(csr).tocoo()
         rows, cols, data = mst.row, mst.col, -mst.data
 
