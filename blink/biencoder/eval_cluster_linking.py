@@ -113,22 +113,7 @@ def partition_graph(graph, n_entities, directed, return_clusters=False):
         (optional) contains arrays of connected component indices of the graph
     """
     rows, cols, data, shape = graph['rows'], graph['cols'], graph['data'], graph['shape']
-    if not directed:
-        # Filter duplicates
-        seen = set()
-        _f_row, _f_col, _f_data = [], [], []
-        for k in range(len(rows)):
-            if (rows[k], cols[k]) in seen:
-                continue
-            seen.add((rows[k], cols[k]))
-            _f_row.append(rows[k])
-            _f_col.append(cols[k])
-            _f_data.append(data[k])
-        rows, cols, data = list(map(np.array, (_f_row, _f_col, _f_data)))
-        # Compute MST
-        csr = csr_matrix((-data, (rows, cols)), shape=shape)
-        mst = minimum_spanning_tree(csr).tocoo()
-        rows, cols, data = mst.row, mst.col, -mst.data
+
     rows, cols, data = cluster_linking_partition(
         rows,
         cols,

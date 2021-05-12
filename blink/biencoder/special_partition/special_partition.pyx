@@ -4,6 +4,8 @@
 import cython
 import numpy as np
 cimport numpy as np
+from scipy.sparse import csr_matrix
+from scipy.sparse.csgraph import minimum_spanning_tree
 from tqdm import tqdm
 from IPython import embed
 
@@ -167,6 +169,14 @@ def cluster_linking_partition(rows, cols, data, n_entities, directed=True, dfs=T
         _f_col.append(cols[k])
         _f_data.append(data[k])
     rows, cols, data = list(map(np.array, (_f_row, _f_col, _f_data)))
+
+    if not directed:
+        # Filter down using Scipy's MST routine
+        shape = max(np.max(rows), np.max(cols))
+        shape = (shape, shape)
+        csr = csr_matrix((-data, (rows, cols)), shape=shape)
+        mst = minimum_spanning_tree(csr).tocoo()
+        rows, cols, data = mst.row, mst.col, -mst.data
 
     # Sort data for efficient DFS
     sort_order = lambda x: (x[0], x[1]*(-1 if dfs else 1)) if directed else (x[1], x[0]*(-1 if dfs else 1)) # For faster iterations: descending order for DFS, ascending order for BFS
