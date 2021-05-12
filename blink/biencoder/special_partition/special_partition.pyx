@@ -153,11 +153,6 @@ def cluster_linking_partition(rows, cols, data, n_entities, directed=True, dfs=T
     
     cdef np.ndarray[BOOL_t, ndim=1] keep_edge_mask
 
-    # If undirected, add the reverse edges
-    if not directed:
-        rows, cols = np.concatenate((rows, cols)), np.concatenate((cols, rows))
-        data = np.concatenate((data, data))
-    
     # Filter duplicates only on row,col tuples (to accomodate approximation errors in data)
     seen = set()
     _f_row, _f_col, _f_data = [], [], []
@@ -171,12 +166,28 @@ def cluster_linking_partition(rows, cols, data, n_entities, directed=True, dfs=T
     rows, cols, data = list(map(np.array, (_f_row, _f_col, _f_data)))
 
     if not directed:
-        # Filter down using Scipy's MST routine
+        # Filter down using Scipy's MST routine for faster processing
         shape = int(max(np.max(rows), np.max(cols))) + 1
         shape = (shape, shape)
         csr = csr_matrix((-data, (rows, cols)), shape=shape)
         mst = minimum_spanning_tree(csr).tocoo()
         rows, cols, data = mst.row, mst.col, -mst.data
+    
+        # Add the reverse edges
+        rows, cols = np.concatenate((rows, cols)), np.concatenate((cols, rows))
+        data = np.concatenate((data, data))
+
+        # Filter duplicates only on row,col tuples (to accomodate approximation errors in data)
+        seen = set()
+        _f_row, _f_col, _f_data = [], [], []
+        for k in range(len(rows)):
+            if (rows[k], cols[k]) in seen:
+                continue
+            seen.add((rows[k], cols[k]))
+            _f_row.append(rows[k])
+            _f_col.append(cols[k])
+            _f_data.append(data[k])
+        rows, cols, data = list(map(np.array, (_f_row, _f_col, _f_data)))
 
     # Sort data for efficient DFS
     sort_order = lambda x: (x[0], x[1]*(-1 if dfs else 1)) if directed else (x[1], x[0]*(-1 if dfs else 1)) # For faster iterations: descending order for DFS, ascending order for BFS

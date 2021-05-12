@@ -14,8 +14,8 @@ from torch.utils.data import (DataLoader, SequentialSampler)
 import numpy as np
 from tqdm import tqdm
 import pickle
-from scipy.sparse import coo_matrix, csr_matrix
-from scipy.sparse.csgraph import connected_components, minimum_spanning_tree
+from scipy.sparse import coo_matrix
+from scipy.sparse.csgraph import connected_components
 from special_partition.special_partition import cluster_linking_partition
 from collections import defaultdict
 import blink.biencoder.data_process_mult as data_process
