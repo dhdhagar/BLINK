@@ -172,7 +172,7 @@ def cluster_linking_partition(rows, cols, data, n_entities, directed=True, dfs=T
 
     if not directed:
         # Filter down using Scipy's MST routine
-        shape = max(np.max(rows), np.max(cols))
+        shape = int(max(np.max(rows), np.max(cols)))
         shape = (shape, shape)
         csr = csr_matrix((-data, (rows, cols)), shape=shape)
         mst = minimum_spanning_tree(csr).tocoo()
