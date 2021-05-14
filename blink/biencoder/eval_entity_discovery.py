@@ -15,6 +15,7 @@ import numpy as np
 from tqdm import tqdm
 import pickle
 import faiss
+from itertools import compress
 from sklearn.cluster import KMeans
 from sklearn.metrics.cluster import adjusted_rand_score, normalized_mutual_info_score
 from scipy.sparse import coo_matrix
@@ -175,7 +176,7 @@ def main(params):
 
     men_embeds = embed_data['men_embeds']
     if use_types:
-        dict_idxs_by_type = data_process.get_idxs_by_type(dictionary[keep_mask])
+        dict_idxs_by_type = data_process.get_idxs_by_type(list(compress(dictionary, keep_mask)))
         dict_indexes = data_process.get_index_from_embeds(dict_embeds, dict_idxs_by_type, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
         if 'men_idxs_by_type' in embed_data:
             men_idxs_by_type = embed_data['men_idxs_by_type']
