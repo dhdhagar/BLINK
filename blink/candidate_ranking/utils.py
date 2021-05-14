@@ -109,7 +109,7 @@ def save_model(model, tokenizer, output_dir):
     tokenizer.save_vocabulary(output_dir)
 
 
-def get_logger(output_dir=None):
+def get_logger(output_dir=None, file_name='log'):
     if output_dir != None:
         os.makedirs(output_dir, exist_ok=True)
         logging.basicConfig(
@@ -118,7 +118,7 @@ def get_logger(output_dir=None):
             level=logging.INFO,
             handlers=[
                 logging.FileHandler(
-                    "{}/log.txt".format(output_dir), mode="a", delay=False
+                    "{}/{}.txt".format(output_dir, file_name), mode="a", delay=False
                 ),
                 logging.StreamHandler(sys.stdout),
             ],

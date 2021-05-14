@@ -99,7 +99,7 @@ def main(params):
     output_path = params["output_path"]
     if not os.path.exists(output_path):
         os.makedirs(output_path)
-    logger = utils.get_logger(params["output_path"])
+    logger = utils.get_logger(params["output_path"], 'log-discovery')
 
     embed_data_path = params["embed_data_path"]
     if embed_data_path is None or not os.path.exists(embed_data_path):
