@@ -361,6 +361,12 @@ class BlinkParser(argparse.ArgumentParser):
             "--n_thresholds", type=int, default=10,
             help="Number of thresholds to try out for entity discovery",
         )
+        parser.add_argument(
+            "--embed_data_path",
+            default=None,
+            type=str,
+            help="The directory from which to load the embeddings data (embed_data.t7).",
+        )
 
     def add_joint_train_args(self, args=None):
         """

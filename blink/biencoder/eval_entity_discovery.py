@@ -100,6 +100,10 @@ def main(params):
         os.makedirs(output_path)
     logger = utils.get_logger(params["output_path"])
 
+    embed_data_path = params["embed_data_path"]
+    if embed_data_path is None or not os.path.exists(embed_data_path):
+        embed_data_path = output_path
+
     pickle_src_path = params["pickle_src_path"]
     if pickle_src_path is None or not os.path.exists(pickle_src_path):
         pickle_src_path = output_path
@@ -114,9 +118,9 @@ def main(params):
 
     # Load evaluation data
     entity_dictionary_loaded = False
-    dictionary_pkl_path = os.path.join(pickle_src_path, 'dictionary.pickle')
-    tensor_data_pkl_path = os.path.join(pickle_src_path, 'tensor_data.pickle')
-    mention_data_pkl_path = os.path.join(pickle_src_path, 'mention_data.pickle')
+    dictionary_pkl_path = os.path.join(pickle_src_path, 'test_dictionary.pickle')
+    tensor_data_pkl_path = os.path.join(pickle_src_path, 'test_tensor_data.pickle')
+    mention_data_pkl_path = os.path.join(pickle_src_path, 'test_mention_data.pickle')
     print("Loading stored processed entity dictionary...")
     with open(dictionary_pkl_path, 'rb') as read_handle:
         dictionary = pickle.load(read_handle)
@@ -125,6 +129,15 @@ def main(params):
         tensor_data = pickle.load(read_handle)
     with open(mention_data_pkl_path, 'rb') as read_handle:
         mention_data = pickle.load(read_handle)
+    print("Loading embed data...")
+    # Check and load stored embedding data
+    embed_data_path = os.path.join(embed_data_path, 'embed_data.t7')
+    embed_data = torch.load(embed_data_path)
+    # Load stored joint graphs
+    graph_path = os.path.join(output_path, 'graphs.pickle')
+    print("Loading stored joint graphs...")
+    with open(graph_path, 'rb') as read_handle:
+        joint_graphs = pickle.load(read_handle)
 
     n_entities = len(dictionary)
     n_mentions = len(mention_data)
@@ -147,18 +160,8 @@ def main(params):
     logger.info(f"Dropped {n_ents_dropped} entities")
     logger.info(f"=> Mentions without gold entities = {n_mentions_wo_gold_ents}")
 
-    # Load stored joint graphs
-    graph_path = os.path.join(output_path, 'graphs.pickle')
-    print("Loading stored joint graphs...")
-    with open(graph_path, 'rb') as read_handle:
-        joint_graphs = pickle.load(read_handle)
-
-    # Check and load stored embedding data
-    embed_data_path = os.path.join(output_path, 'embed_data.t7')
-    embed_data = torch.load(embed_data_path)
-
     # Load embeddings in order to compute new KNN entities after dropping
-    print('Loading stored embeddings and computing indexes')
+    print('Computing new dictionary indexes...')
     
     original_dict_embeds = embed_data['dict_embeds']
     keep_mask = np.ones(len(original_dict_embeds), dtype='bool')
