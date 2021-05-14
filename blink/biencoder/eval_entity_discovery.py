@@ -236,16 +236,22 @@ def main(params):
         graph_mode = ['directed', 'undirected']
     
     n_thresholds = params['n_thresholds'] # Default is 10
+    exact_threshold = params.get('exact_threshold', None)
+    exact_knn = params.get('exact_knn', None)
+    
     kmeans = KMeans(n_clusters=n_thresholds, random_state=17)
 
     # TODO: Baseline? (without dropping entities)
 
-    best_result = -1.
-    best_config = None
     for mode in graph_mode:
+        best_result = -1.
+        best_config = None
         for k in joint_graphs:
-            if k > 0 and k <= knn:
-                thresholds = np.sort(np.concatenate(([0], kmeans.fit(joint_graphs[k]['data'].reshape(-1,1)).cluster_centers_.flatten())))
+            if (exact_knn is None and k > 0 and k <= knn) or (exact_knn is not None and k == exact_knn):
+                if exact_threshold is not None:
+                    thresholds = np.array([0, exact_threshold])
+                else:
+                    thresholds = np.sort(np.concatenate(([0], kmeans.fit(joint_graphs[k]['data'].reshape(-1,1)).cluster_centers_.flatten())))
                 for thresh in thresholds:
                     print("\nPartitioning...")
                     logger.info(f"{mode.upper()}, k={k}, threshold={thresh}")
@@ -255,12 +261,11 @@ def main(params):
                     # Analyze cluster against gold clusters
                     result = analyzeClusters(clusters, mention_gold_cui_idxs, n_entities, n_mentions, logger)
                     results[f'({mode}, {k}, {thresh})'] = result
-                    if thresh != 0 and result > best_result:
+                    if k != 0 and result > best_result:
                         best_result = result
                         best_config = (mode, k, thresh)
-
-    results['best_config'] = best_config
-    results['best_result'] = best_result
+        results[f'best_{mode}_config'] = best_config
+        results[f'best_{mode}_result'] = best_result
     
     # Store results
     output_file_name = os.path.join(

@@ -362,6 +362,14 @@ class BlinkParser(argparse.ArgumentParser):
             help="Number of thresholds to try out for entity discovery",
         )
         parser.add_argument(
+            "--exact_threshold", type=float, default=None,
+            help="Exact value of the similarity threshold to run the experiment against",
+        )
+        parser.add_argument(
+            "--exact_knn", type=int, default=None,
+            help="Exact value of the knn graph to run the experient against",
+        )
+        parser.add_argument(
             "--embed_data_path",
             default=None,
             type=str,
