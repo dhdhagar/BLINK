@@ -216,10 +216,14 @@ def main(params):
     
     # Add entities for mentions whose 
     for k in joint_graphs:
+        rows, cols, data= [], [], []
         for edge in extra_entity_knn:
-            joint_graphs[k]['rows'].append(edge[0])
-            joint_graphs[k]['cols'].append(edge[1])
-            joint_graphs[k]['data'].append(edge[2])
+            rows.append(edge[0])
+            cols.append(edge[1])
+            data.append(edge[2])
+        joint_graphs[k]['rows'] = np.concatenate((joint_graphs[k]['rows'], rows))
+        joint_graphs[k]['cols'] = np.concatenate((joint_graphs[k]['cols'], cols))
+        joint_graphs[k]['data'] = np.concatenate((joint_graphs[k]['data'], data))
 
     results = {
         'data_split': data_split.upper(),
