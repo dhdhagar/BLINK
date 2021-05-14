@@ -245,7 +245,7 @@ def main(params):
     for mode in graph_mode:
         for k in joint_graphs:
             if k > 0 and k <= knn:
-                thresholds = np.sort(np.concatenate(([0], kmeans.fit(joint_graphs[k]['data']).cluster_centers_)))
+                thresholds = np.sort(np.concatenate(([0], kmeans.fit(joint_graphs[k]['data'].reshape(-1,1)).cluster_centers_.flatten())))
                 for thresh in thresholds:
                     print("\nPartitioning...")
                     logger.info(f"{mode.upper()}, k={k}, threshold={thresh}")
@@ -255,7 +255,7 @@ def main(params):
                     # Analyze cluster against gold clusters
                     result = analyzeClusters(clusters, mention_gold_cui_idxs, n_entities, n_mentions, logger)
                     results[(mode, k, thresh)] = result
-                    if result > best_result:
+                    if thresh != 0 and result > best_result:
                         best_result = result
                         best_config = (mode, k, thresh)
 
