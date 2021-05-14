@@ -210,7 +210,7 @@ def main(params):
             q_nn_idxs = nn_idxs[men_idx]
             q_nn_embeds = torch.tensor(dict_embeds[q_nn_idxs]).cuda()
             q_scores = torch.flatten(
-                torch.mm(torch.tensor(men_embed).cuda(), q_nn_embeds.T)).cpu()
+                torch.mm(torch.tensor(np.expand_dims(men_embed, axis=0)).cuda(), q_nn_embeds.T)).cpu()
             c, data = new_to_old_dict_mapping[q_nn_idxs[torch.argmax(q_scores)]], torch.max(q_scores)
             extra_entity_knn.append((r,c,data))
     
