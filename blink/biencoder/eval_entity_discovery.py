@@ -199,7 +199,7 @@ def main(params):
                 q_nn_idxs = dict_type_idx_mapping[nn_idxs[i]]
                 q_nn_embeds = torch.tensor(dict_embeds[q_nn_idxs]).cuda()
                 q_scores = torch.flatten(
-                    torch.mm(torch.tensor(q_men_embeds[i]).cuda(), q_nn_embeds.T)).cpu()
+                    torch.mm(torch.tensor(q_men_embeds[i:i+1]).cuda(), q_nn_embeds.T)).cpu()
                 c, data = new_to_old_dict_mapping[q_nn_idxs[torch.argmax(q_scores)]], torch.max(q_scores)
                 extra_entity_knn.append((r,c,data))
     else:
