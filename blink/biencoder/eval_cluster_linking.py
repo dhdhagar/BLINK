@@ -26,8 +26,7 @@ from blink.biencoder.biencoder import BiEncoderRanker
 from IPython import embed
 
 
-def get_query_nn(model,
-                 knn,
+def get_query_nn(knn,
                  embeds,
                  index,
                  q_embed,
@@ -37,8 +36,6 @@ def get_query_nn(model,
     """
     Parameters
     ----------
-    model : BiEncoderRanker
-        trained biencoder model
     knn : int
         the number of nearest-neighbours to return
     embeds : ndarray
@@ -408,7 +405,7 @@ def main(params):
             # Fetch nearest entity candidate
             gold_idxs = mention_data[men_query_idx]["label_idxs"][:mention_data[men_query_idx]["n_labels"]]
             dict_cand_idx, dict_cand_score, recall_idx = get_query_nn(
-                reranker, 1, dict_embeds, dict_index, men_embed, searchK=params['recall_k'], gold_idxs=gold_idxs, type_idx_mapping=dict_type_idx_mapping)
+                1, dict_embeds, dict_index, men_embed, searchK=params['recall_k'], gold_idxs=gold_idxs, type_idx_mapping=dict_type_idx_mapping)
             # Compute recall metric
             if recall_idx > -1:
                 recall_idxs[recall_idx] += 1.
@@ -419,7 +416,7 @@ def main(params):
             if not params['only_recall']:
                 # Fetch (k+1) NN mention candidates
                 men_cand_idxs, men_cand_scores = get_query_nn(
-                    reranker, max_knn + 1, men_embeds, men_index, men_embed, type_idx_mapping=men_type_idx_mapping)
+                    max_knn + 1, men_embeds, men_index, men_embed, type_idx_mapping=men_type_idx_mapping)
                 # Filter candidates to remove mention query and keep only the top k candidates
                 filter_mask = men_cand_idxs != men_query_idx
                 men_cand_idxs, men_cand_scores = men_cand_idxs[filter_mask][:max_knn], men_cand_scores[filter_mask][:max_knn]

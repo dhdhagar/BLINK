@@ -71,10 +71,10 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
         
         # Fetch nearest entity candidate
         dict_cand_idx, dict_cand_score = eval_cluster_linking.get_query_nn(
-            reranker, 1, dict_embeds, dict_index, men_embed, type_idx_mapping=dict_type_idx_mapping)
+            1, dict_embeds, dict_index, men_embed, type_idx_mapping=dict_type_idx_mapping)
         # Fetch (k+1) NN mention candidates
         men_cand_idxs, men_cand_scores = eval_cluster_linking.get_query_nn(
-            reranker, max_knn + 1, men_embeds, men_index, men_embed, type_idx_mapping=men_type_idx_mapping)
+            max_knn + 1, men_embeds, men_index, men_embed, type_idx_mapping=men_type_idx_mapping)
         # Filter candidates to remove mention query and keep only the top k candidates
         filter_mask = men_cand_idxs != men_query_idx
         men_cand_idxs, men_cand_scores = men_cand_idxs[filter_mask][:max_knn], men_cand_scores[filter_mask][:max_knn]
