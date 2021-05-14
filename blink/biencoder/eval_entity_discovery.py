@@ -263,7 +263,7 @@ def main(params):
                     # Analyze cluster against gold clusters
                     result = analyzeClusters(clusters, mention_gold_cui_idxs, n_entities, n_mentions, logger)
                     results[f'({mode}, {k}, {thresh})'] = result
-                    if k != 0 and result > best_result:
+                    if thresh != 0 and result > best_result:
                         best_result = result
                         best_config = (mode, k, thresh)
         results[f'best_{mode}_config'] = best_config
