@@ -356,6 +356,11 @@ class BlinkParser(argparse.ArgumentParser):
             "--force_exact_search", action="store_true",
             help="Whether to run FAISS nearest-neighbour retrieval in exact-search (IndexFlatIP) mode",
         )
+        # Entity discovery
+        parser.add_argument(
+            "--n_thresholds", type=int, default=10,
+            help="Number of thresholds to try out for entity discovery",
+        )
 
     def add_joint_train_args(self, args=None):
         """

@@ -355,22 +355,37 @@ def special_partition(np.ndarray[INT_t, ndim=1] row,
 
     return keep_mask
 
-def cluster_linking_partition(rows, cols, data, n_entities, directed=True, dfs=True, silent=False, experimental=False):
+def cluster_linking_partition(rows, cols, data, n_entities, directed=True, dfs=True, silent=False, exclude=set(), threshold=None, experimental=False):
     assert rows.shape[0] == cols.shape[0] == data.shape[0]
     
     cdef np.ndarray[BOOL_t, ndim=1] keep_edge_mask
 
     # Filter duplicates only on row,col tuples (to accomodate approximation errors in data)
+    # Additionally, filter out any nodes passed in 'exclude'
     seen = set()
+    duplicated, excluded, thresholded = 0, 0, 0
     _f_row, _f_col, _f_data = [], [], []
     for k in range(len(rows)):
         if (rows[k], cols[k]) in seen:
+            duplicated += 1
             continue
         seen.add((rows[k], cols[k]))
+        if rows[k] in exclude or cols[k] in exclude:
+            excluded += 1
+            continue
+        if threshold is not None and data[k] < threshold:
+            thresholded += 1
+            continue
         _f_row.append(rows[k])
         _f_col.append(cols[k])
         _f_data.append(data[k])
     rows, cols, data = list(map(np.array, (_f_row, _f_col, _f_data)))
+
+    print(f"""
+Dropped edges during pre-processing:
+    Duplicates: {duplicated}
+    Excluded: {excluded}
+    Thresholded: {thresholded}""")
 
     if not directed:
         # Filter down using Scipy's MST routine for faster processing
