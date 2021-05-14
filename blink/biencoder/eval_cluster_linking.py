@@ -479,14 +479,15 @@ def main(params):
     for mode in results:
         print(f'\nEvaluation mode: {mode.upper()}')
         for k in joint_graphs:
-            print(f"\nGraph (k={k}):")
-            # Partition graph based on cluster-linking constraints
-            partitioned_graph, clusters = partition_graph(
-                joint_graphs[k], n_entities, mode == 'directed', return_clusters=True)
-            # Infer predictions from clusters
-            result = analyzeClusters(clusters, test_dictionary, mention_data, k)
-            # Store result
-            results[mode].append(result)
+            if k <= knn:
+                print(f"\nGraph (k={k}):")
+                # Partition graph based on cluster-linking constraints
+                partitioned_graph, clusters = partition_graph(
+                    joint_graphs[k], n_entities, mode == 'directed', return_clusters=True)
+                # Infer predictions from clusters
+                result = analyzeClusters(clusters, test_dictionary, mention_data, k)
+                # Store result
+                results[mode].append(result)
 
     execution_time = (time.time() - time_start) / 60
 
