@@ -254,7 +254,7 @@ def main(params):
                         joint_graphs[k], n_entities, mode == 'directed', return_clusters=True, exclude=set_dropped_ent_idxs, threshold=thresh)
                     # Analyze cluster against gold clusters
                     result = analyzeClusters(clusters, mention_gold_cui_idxs, n_entities, n_mentions, logger)
-                    results[(mode, k, thresh)] = result
+                    results[f'({mode}, {k}, {thresh})'] = result
                     if thresh != 0 and result > best_result:
                         best_result = result
                         best_config = (mode, k, thresh)
