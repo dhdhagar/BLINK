@@ -228,11 +228,15 @@ def main(params):
     output_path = params["output_path"]
     if not os.path.exists(output_path):
         os.makedirs(output_path)
-    logger = utils.get_logger(params["output_path"])
+    logger = utils.get_logger(params["output_path"], 'log-eval')
 
     pickle_src_path = params["pickle_src_path"]
     if pickle_src_path is None or not os.path.exists(pickle_src_path):
         pickle_src_path = output_path
+
+    embed_data_path = params["embed_data_path"]
+    if embed_data_path is None or not os.path.exists(embed_data_path):
+        embed_data_path = output_path
 
     # Init model
     reranker = BiEncoderRanker(params)
@@ -336,7 +340,7 @@ def main(params):
             }
 
         # Check and load stored embedding data
-        embed_data_path = os.path.join(output_path, 'embed_data.t7')
+        embed_data_path = os.path.join(embed_data_path, 'embed_data.t7')
         embed_data = None
         if os.path.isfile(embed_data_path):
             embed_data = torch.load(embed_data_path)
