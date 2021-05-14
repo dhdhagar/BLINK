@@ -234,7 +234,9 @@ def main(params):
     }
     if graph_mode is None or graph_mode not in ['directed', 'undirected']:
         graph_mode = ['directed', 'undirected']
-    
+    else:
+        graph_mode = [graph_mode]
+
     n_thresholds = params['n_thresholds'] # Default is 10
     exact_threshold = params.get('exact_threshold', None)
     exact_knn = params.get('exact_knn', None)
