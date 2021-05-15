@@ -147,83 +147,89 @@ def main(params):
     mention_gold_cui_idxs = list(map(lambda x: x['label_idxs'][n_labels - 1], mention_data))
     ents_in_data = np.unique(mention_gold_cui_idxs)
 
-    # Percentage of entities from the mention set to drop
-    ent_drop_prop = 0.1
-    
-    logger.info(f"Dropping {ent_drop_prop*100}% of {len(ents_in_data)} entities found in mention set")
-
-    # Get entity indices to drop
-    n_ents_dropped = int(ent_drop_prop*len(ents_in_data))
-    dropped_ent_idxs = rng.choice(ents_in_data, size=n_ents_dropped, replace=False)
-    set_dropped_ent_idxs = set(dropped_ent_idxs)
-    
-    n_mentions_wo_gold_ents = sum([1 if x in set_dropped_ent_idxs else 0 for x in mention_gold_cui_idxs])
-    logger.info(f"Dropped {n_ents_dropped} entities")
-    logger.info(f"=> Mentions without gold entities = {n_mentions_wo_gold_ents}")
-
-    # Load embeddings in order to compute new KNN entities after dropping
-    print('Computing new dictionary indexes...')
-    
-    original_dict_embeds = embed_data['dict_embeds']
-    keep_mask = np.ones(len(original_dict_embeds), dtype='bool')
-    keep_mask[dropped_ent_idxs] = False
-    dict_embeds = original_dict_embeds[keep_mask]
-
-    new_to_old_dict_mapping = []
-    for i in range(len(original_dict_embeds)):
-        if keep_mask[i]:
-            new_to_old_dict_mapping.append(i)
-
-    men_embeds = embed_data['men_embeds']
-    if use_types:
-        dict_idxs_by_type = data_process.get_idxs_by_type(list(compress(dictionary, keep_mask)))
-        dict_indexes = data_process.get_index_from_embeds(dict_embeds, dict_idxs_by_type, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
-        if 'men_idxs_by_type' in embed_data:
-            men_idxs_by_type = embed_data['men_idxs_by_type']
-        else:
-            men_idxs_by_type = data_process.get_idxs_by_type(mention_data)
+    if params['drop_all_entities']:
+        ent_drop_prop = 1
+        n_ents_dropped = len(ents_in_data)
+        n_mentions_wo_gold_ents = n_mentions
+        logger.info(f"Dropping all {n_ents_dropped} entities found in mention set")
     else:
-        dict_index = data_process.get_index_from_embeds(dict_embeds, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
-    
-    # Fetch additional KNN entity to make sure every mention has a linked entity after dropping
-    extra_entity_knn = []
-    if use_types:
-        for men_type in men_idxs_by_type:
-            dict_index = dict_indexes[men_type]
-            dict_type_idx_mapping = dict_idxs_by_type[men_type]
-            q_men_embeds = men_embeds[men_idxs_by_type[men_type]] # np.array(list(map(lambda x: men_embeds[x], men_idxs_by_type[men_type])))
+        # Percentage of entities from the mention set to drop
+        ent_drop_prop = 0.1
+        
+        logger.info(f"Dropping {ent_drop_prop*100}% of {len(ents_in_data)} entities found in mention set")
+
+        # Get entity indices to drop
+        n_ents_dropped = int(ent_drop_prop*len(ents_in_data))
+        dropped_ent_idxs = rng.choice(ents_in_data, size=n_ents_dropped, replace=False)
+        set_dropped_ent_idxs = set(dropped_ent_idxs)
+        
+        n_mentions_wo_gold_ents = sum([1 if x in set_dropped_ent_idxs else 0 for x in mention_gold_cui_idxs])
+        logger.info(f"Dropped {n_ents_dropped} entities")
+        logger.info(f"=> Mentions without gold entities = {n_mentions_wo_gold_ents}")
+
+        # Load embeddings in order to compute new KNN entities after dropping
+        print('Computing new dictionary indexes...')
+        
+        original_dict_embeds = embed_data['dict_embeds']
+        keep_mask = np.ones(len(original_dict_embeds), dtype='bool')
+        keep_mask[dropped_ent_idxs] = False
+        dict_embeds = original_dict_embeds[keep_mask]
+
+        new_to_old_dict_mapping = []
+        for i in range(len(original_dict_embeds)):
+            if keep_mask[i]:
+                new_to_old_dict_mapping.append(i)
+
+        men_embeds = embed_data['men_embeds']
+        if use_types:
+            dict_idxs_by_type = data_process.get_idxs_by_type(list(compress(dictionary, keep_mask)))
+            dict_indexes = data_process.get_index_from_embeds(dict_embeds, dict_idxs_by_type, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
+            if 'men_idxs_by_type' in embed_data:
+                men_idxs_by_type = embed_data['men_idxs_by_type']
+            else:
+                men_idxs_by_type = data_process.get_idxs_by_type(mention_data)
+        else:
+            dict_index = data_process.get_index_from_embeds(dict_embeds, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
+        
+        # Fetch additional KNN entity to make sure every mention has a linked entity after dropping
+        extra_entity_knn = []
+        if use_types:
+            for men_type in men_idxs_by_type:
+                dict_index = dict_indexes[men_type]
+                dict_type_idx_mapping = dict_idxs_by_type[men_type]
+                q_men_embeds = men_embeds[men_idxs_by_type[men_type]] # np.array(list(map(lambda x: men_embeds[x], men_idxs_by_type[men_type])))
+                fetch_k = 1 if isinstance(dict_index, faiss.IndexFlatIP) else 16
+                _, nn_idxs = dict_index.search(q_men_embeds, fetch_k)
+                for i, men_idx in enumerate(men_idxs_by_type[men_type]):
+                    r = n_entities + men_idx
+                    q_nn_idxs = dict_type_idx_mapping[nn_idxs[i]]
+                    q_nn_embeds = torch.tensor(dict_embeds[q_nn_idxs]).cuda()
+                    q_scores = torch.flatten(
+                        torch.mm(torch.tensor(q_men_embeds[i:i+1]).cuda(), q_nn_embeds.T)).cpu()
+                    c, data = new_to_old_dict_mapping[q_nn_idxs[torch.argmax(q_scores)]], torch.max(q_scores)
+                    extra_entity_knn.append((r,c,data))
+        else:
             fetch_k = 1 if isinstance(dict_index, faiss.IndexFlatIP) else 16
-            _, nn_idxs = dict_index.search(q_men_embeds, fetch_k)
-            for i, men_idx in enumerate(men_idxs_by_type[men_type]):
+            _, nn_idxs = dict_index.search(men_embeds, fetch_k)
+            for men_idx, men_embed in enumerate(men_embeds):
                 r = n_entities + men_idx
-                q_nn_idxs = dict_type_idx_mapping[nn_idxs[i]]
+                q_nn_idxs = nn_idxs[men_idx]
                 q_nn_embeds = torch.tensor(dict_embeds[q_nn_idxs]).cuda()
                 q_scores = torch.flatten(
-                    torch.mm(torch.tensor(q_men_embeds[i:i+1]).cuda(), q_nn_embeds.T)).cpu()
+                    torch.mm(torch.tensor(np.expand_dims(men_embed, axis=0)).cuda(), q_nn_embeds.T)).cpu()
                 c, data = new_to_old_dict_mapping[q_nn_idxs[torch.argmax(q_scores)]], torch.max(q_scores)
                 extra_entity_knn.append((r,c,data))
-    else:
-        fetch_k = 1 if isinstance(dict_index, faiss.IndexFlatIP) else 16
-        _, nn_idxs = dict_index.search(men_embeds, fetch_k)
-        for men_idx, men_embed in enumerate(men_embeds):
-            r = n_entities + men_idx
-            q_nn_idxs = nn_idxs[men_idx]
-            q_nn_embeds = torch.tensor(dict_embeds[q_nn_idxs]).cuda()
-            q_scores = torch.flatten(
-                torch.mm(torch.tensor(np.expand_dims(men_embed, axis=0)).cuda(), q_nn_embeds.T)).cpu()
-            c, data = new_to_old_dict_mapping[q_nn_idxs[torch.argmax(q_scores)]], torch.max(q_scores)
-            extra_entity_knn.append((r,c,data))
-    
-    # Add entities for mentions whose 
-    for k in joint_graphs:
-        rows, cols, data= [], [], []
-        for edge in extra_entity_knn:
-            rows.append(edge[0])
-            cols.append(edge[1])
-            data.append(edge[2])
-        joint_graphs[k]['rows'] = np.concatenate((joint_graphs[k]['rows'], rows))
-        joint_graphs[k]['cols'] = np.concatenate((joint_graphs[k]['cols'], cols))
-        joint_graphs[k]['data'] = np.concatenate((joint_graphs[k]['data'], data))
+        
+        # Add entities for mentions whose 
+        for k in joint_graphs:
+            rows, cols, data= [], [], []
+            for edge in extra_entity_knn:
+                rows.append(edge[0])
+                cols.append(edge[1])
+                data.append(edge[2])
+            joint_graphs[k]['rows'] = np.concatenate((joint_graphs[k]['rows'], rows))
+            joint_graphs[k]['cols'] = np.concatenate((joint_graphs[k]['cols'], cols))
+            joint_graphs[k]['data'] = np.concatenate((joint_graphs[k]['data'], data))
 
     results = {
         'data_split': data_split.upper(),
@@ -249,6 +255,17 @@ def main(params):
         best_result = -1.
         best_config = None
         for k in joint_graphs:
+            if params['drop_all_entities']:
+                # Drop all entities from the graph
+                rows, cols, data = joint_graphs[k]['rows'], joint_graphs[k]['cols'], joint_graphs[k]['data']
+                _f_row, _f_col, _f_data = [], [], []
+                for ki in range(len(joint_graphs[k]['rows'])):
+                    if joint_graphs[k]['cols'][ki] < n_entities or joint_graphs[k]['rows'][ki] < n_entities:
+                        continue
+                    _f_row.append(joint_graphs[k]['rows'][ki])
+                    _f_col.append(joint_graphs[k]['cols'][ki])
+                    _f_data.append(joint_graphs[k]['data'][ki])
+                joint_graphs[k]['rows'], joint_graphs[k]['cols'], joint_graphs[k]['data'] = list(map(np.array, (_f_row, _f_col, _f_data)))
             if (exact_knn is None and k > 0 and k <= knn) or (exact_knn is not None and k == exact_knn):
                 if exact_threshold is not None:
                     thresholds = np.array([0, exact_threshold])

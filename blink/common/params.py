@@ -375,6 +375,10 @@ class BlinkParser(argparse.ArgumentParser):
             type=str,
             help="The directory from which to load the embeddings data (embed_data.t7).",
         )
+        parser.add_argument(
+            "--drop_all_entities", action="store_true",
+            help="Whether to run the discovery without any entities (usually for baseline)",
+        )
 
     def add_joint_train_args(self, args=None):
         """
