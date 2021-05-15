@@ -381,7 +381,8 @@ def cluster_linking_partition(rows, cols, data, n_entities, directed=True, dfs=T
         _f_data.append(data[k])
     rows, cols, data = list(map(np.array, (_f_row, _f_col, _f_data)))
 
-    print(f"""
+    if duplicated + excluded + thresholded > 0:
+        print(f"""
 Dropped edges during pre-processing:
     Duplicates: {duplicated}
     Excluded: {excluded}
