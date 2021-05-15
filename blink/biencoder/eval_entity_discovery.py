@@ -30,18 +30,46 @@ from blink.biencoder.biencoder import BiEncoderRanker
 from IPython import embed
 
 
-def partition_graph(graph, n_entities, directed, return_clusters=False, exclude=set(), threshold=None):
+def partition_graph(graph, n_entities, directed, return_clusters=False, exclude=set(), threshold=None, without_entities=False):
     rows, cols, data, shape = graph['rows'], graph['cols'], graph['data'], graph['shape']
 
-    rows, cols, data = cluster_linking_partition(
-        rows,
-        cols,
-        data,
-        n_entities,
-        directed,
-        exclude=exclude,
-        threshold=threshold
-    )
+    if not without_entities:
+        rows, cols, data = cluster_linking_partition(
+            rows,
+            cols,
+            data,
+            n_entities,
+            directed,
+            exclude=exclude,
+            threshold=threshold
+        )
+    else:
+        # Manual filtering that special partition executes
+        seen = set()
+        duplicated, excluded, thresholded = 0, 0, 0
+        _f_row, _f_col, _f_data = [], [], []
+        for k in range(len(rows)):
+            if (rows[k], cols[k]) in seen:
+                duplicated += 1
+                continue
+            seen.add((rows[k], cols[k]))
+            if rows[k] in exclude or cols[k] in exclude:
+                excluded += 1
+                continue
+            if threshold is not None and data[k] < threshold:
+                thresholded += 1
+                continue
+            _f_row.append(rows[k])
+            _f_col.append(cols[k])
+            _f_data.append(data[k])
+        rows, cols, data = list(map(np.array, (_f_row, _f_col, _f_data)))
+        if duplicated + excluded + thresholded > 0:
+            print(f"""
+Dropped edges during pre-processing:
+    Duplicates: {duplicated}
+    Excluded: {excluded}
+    Thresholded: {thresholded}""")
+
     # Construct the partitioned graph
     partitioned_graph = coo_matrix(
         (data, (rows, cols)), shape=shape)
@@ -277,7 +305,7 @@ def main(params):
                     logger.info(f"{mode.upper()}, k={k}, threshold={thresh}")
                     # Partition graph based on cluster-linking constraints
                     partitioned_graph, clusters = partition_graph(
-                        joint_graphs[k], n_entities, mode == 'directed', return_clusters=True, exclude=set_dropped_ent_idxs, threshold=thresh)
+                        joint_graphs[k], n_entities, mode == 'directed', return_clusters=True, exclude=set_dropped_ent_idxs, threshold=thresh, without_entities=params['drop_all_entities'])
                     # Analyze cluster against gold clusters
                     result = analyzeClusters(clusters, mention_gold_cui_idxs, n_entities, n_mentions, logger)
                     results[f'({mode}, {k}, {thresh})'] = result
