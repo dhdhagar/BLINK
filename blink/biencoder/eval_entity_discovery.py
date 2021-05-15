@@ -152,6 +152,7 @@ def main(params):
         n_ents_dropped = len(ents_in_data)
         n_mentions_wo_gold_ents = n_mentions
         logger.info(f"Dropping all {n_ents_dropped} entities found in mention set")
+        set_dropped_ent_idxs = set()
     else:
         # Percentage of entities from the mention set to drop
         ent_drop_prop = 0.1
