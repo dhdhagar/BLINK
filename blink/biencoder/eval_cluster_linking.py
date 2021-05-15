@@ -477,6 +477,10 @@ def main(params):
     else:
         results[graph_mode] = []
 
+    knn_fetch_time = time.time() - time_start
+    graph_processing_time = time.time()
+    n_graphs_processed = 0.
+
     for mode in results:
         print(f'\nEvaluation mode: {mode.upper()}')
         for k in joint_graphs:
@@ -489,9 +493,12 @@ def main(params):
                 result = analyzeClusters(clusters, test_dictionary, mention_data, k)
                 # Store result
                 results[mode].append(result)
+                n_graphs_processed += 1
+
+    avg_graph_processing_time = (time.time() - graph_processing_time) / n_graphs_processed
+    avg_per_graph_time = (knn_fetch_time + avg_graph_processing_time) / 60
 
     execution_time = (time.time() - time_start) / 60
-
     # Store results
     output_file_name = os.path.join(
         output_path, f"eval_results_{__import__('calendar').timegm(__import__('time').gmtime())}")
@@ -516,7 +523,10 @@ def main(params):
     with open(f'{output_file_name}.json', 'w') as f:
         json.dump(result_overview, f, indent=2)
         print(f"\nPredictions overview saved at: {output_file_name}.json")
-    logger.info("\nThe evaluation took {} minutes\n".format(execution_time))
+    
+    logger.info("\nThe avg. per graph evaluation time is {} minutes\n".format(avg_per_graph_time))
+    logger.info("\nThe total evaluation took {} minutes\n".format(execution_time))
+
 
 
 if __name__ == "__main__":
