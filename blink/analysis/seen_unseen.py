@@ -53,7 +53,7 @@ if __name__ == '__main__':
         unseen_acc = (n_correct_unseen / n_seen_in_test) * 100
 
         seen_unseen_results[mode] = {
-            'overall': overall_acc
+            'overall': overall_acc,
             'seen': seen_acc,
             'unseen': unseen_acc
         }
