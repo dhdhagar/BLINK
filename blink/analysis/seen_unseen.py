@@ -16,51 +16,50 @@ result_paths = {
     'mst (undirected)': os.path.join(BLINK_ROOT, 'models/trained/medmentions_mst/eval/pos_neg_loss/no_type/wo_type/eval_results_1621123562-undirected-1.json')
 }
 
-if __name__ == '__main__':
-    seen_unseen_results = {}
+seen_unseen_results = {}
 
-    with open(train_data_path, 'rb') as read_handle:
-        train_data = pickle.load(read_handle)
-    
-    seen_cui_ids = set()
-    for mention in train_data:
-        seen_cui_ids.add(mention['label_cuis'][0])
+with open(train_data_path, 'rb') as read_handle:
+    train_data = pickle.load(read_handle)
 
-    n_seen_in_test = 0.
-    total_seen_computed = False
-    for mode in result_paths:
-        print(f"Mode: {mode}")
-        n_correct_seen = 0.
-        with open(result_paths[mode]) as f:
-            results = json.load(f)
-        n_queries = results['n_mentions']
-        overall_acc = float(results['accuracy'].split(' ')[0]) # Percentage
+seen_cui_ids = set()
+for mention in train_data:
+    seen_cui_ids.add(mention['label_cuis'][0])
 
-        for m in results['success']:
+n_seen_in_test = 0.
+total_seen_computed = False
+for mode in result_paths:
+    print(f"Mode: {mode}")
+    n_correct_seen = 0.
+    with open(result_paths[mode]) as f:
+        results = json.load(f)
+    n_queries = results['n_mentions']
+    overall_acc = float(results['accuracy'].split(' ')[0]) # Percentage
+
+    for m in results['success']:
+        if m['mention_gold_cui'] in seen_cui_ids:
+            if not total_seen_computed:
+                n_seen_in_test += 1
+            n_correct_seen += 1
+
+    if not total_seen_computed:
+        for m in results['failure']:
             if m['mention_gold_cui'] in seen_cui_ids:
-                if not total_seen_computed:
-                    n_seen_in_test += 1
-                n_correct_seen += 1
+                n_seen_in_test += 1
+        total_seen_computed = True
 
-        if not total_seen_computed:
-            for m in results['failure']:
-                if m['mention_gold_cui'] in seen_cui_ids:
-                    n_seen_in_test += 1
-            total_seen_computed = True
+    n_correct_unseen = len(results['success']) - n_correct_seen
 
-        n_correct_unseen = len(results['success']) - n_correct_seen
+    embed()
 
-        embed()
+    seen_acc = (n_correct_seen / n_seen_in_test) * 100
+    unseen_acc = (n_correct_unseen / (n_queries - n_seen_in_test)) * 100
 
-        seen_acc = (n_correct_seen / n_seen_in_test) * 100
-        unseen_acc = (n_correct_unseen / n_seen_in_test) * 100
+    seen_unseen_results[mode] = {
+        'overall': overall_acc,
+        'seen': seen_acc,
+        'unseen': unseen_acc
+    }
 
-        seen_unseen_results[mode] = {
-            'overall': overall_acc,
-            'seen': seen_acc,
-            'unseen': unseen_acc
-        }
-
-    with open(output_file_path, 'w') as f:
-        json.dump(seen_unseen_results, f, indent=2)
-        print(f"\nAnalysis saved at: {output_file_path}")
+with open(output_file_path, 'w') as f:
+    json.dump(seen_unseen_results, f, indent=2)
+    print(f"\nAnalysis saved at: {output_file_path}")
