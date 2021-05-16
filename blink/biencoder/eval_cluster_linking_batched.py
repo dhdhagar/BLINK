@@ -411,7 +411,7 @@ def main(params):
             dict_cand_score = nn_ent_dists[men_query_idx][0]
             # Compute recall metric
             gold_idxs = mention_data[men_query_idx]["label_idxs"][:mention_data[men_query_idx]["n_labels"]]
-            recall_idx = np.argwhere(dict_cand_idx == gold_idxs[0])
+            recall_idx = np.argwhere(nn_ent_idxs[men_query_idx] == gold_idxs[0])
             if len(recall_idx) != 0:
                 recall_idx = int(recall_idx)
                 recall_idxs[recall_idx] += 1.
