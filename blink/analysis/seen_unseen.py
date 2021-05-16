@@ -49,8 +49,6 @@ for mode in result_paths:
 
     n_correct_unseen = len(results['success']) - n_correct_seen
 
-    embed()
-
     seen_acc = (n_correct_seen / n_seen_in_test) * 100
     unseen_acc = (n_correct_unseen / (n_queries - n_seen_in_test)) * 100
 
