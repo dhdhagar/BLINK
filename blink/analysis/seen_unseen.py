@@ -1,6 +1,7 @@
 import pickle
 import os
 import json
+from IPython import embed
 
 BLINK_ROOT = f'{os.path.abspath(os.path.dirname(__file__))}/../..'
 
@@ -48,6 +49,8 @@ if __name__ == '__main__':
             total_seen_computed = True
 
         n_correct_unseen = len(results['success']) - n_correct_seen
+
+        embed()
 
         seen_acc = (n_correct_seen / n_seen_in_test) * 100
         unseen_acc = (n_correct_unseen / n_seen_in_test) * 100
