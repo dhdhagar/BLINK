@@ -396,34 +396,34 @@ def main(params):
 
         logger.info('Starting knn search')
 
+        # Fetch 64 knn entities for all mentions
+        nn_ent_dists, nn_ent_idxs = dict_index.search(men_embeds, 64)
+        # Fetch (k+1) NN mention candidates
+        nn_men_dists, nn_men_idxs = men_index.search(men_embeds, max_knn + 1)
+
+        logger.info('Search complete')
+
+        logger.info('Building graphs')
         # Find the most similar entity and k-nn mentions for each mention query
-        for men_query_idx, men_embed in enumerate(tqdm(men_embeds, total=len(men_embeds), desc="Fetching k-NN")):
-            men_embed = np.expand_dims(men_embed, axis=0)
-            
-            dict_type_idx_mapping, men_type_idx_mapping = None, None
-            if use_types:
-                entity_type = mention_data[men_query_idx]['type']
-                dict_index = dict_indexes[entity_type]
-                men_index = men_indexes[entity_type]
-                dict_type_idx_mapping = dict_idxs_by_type[entity_type]
-                men_type_idx_mapping = men_idxs_by_type[entity_type]
-            
-            # Fetch nearest entity candidate
-            gold_idxs = mention_data[men_query_idx]["label_idxs"][:mention_data[men_query_idx]["n_labels"]]
-            dict_cand_idx, dict_cand_score, recall_idx = get_query_nn(
-                1, dict_embeds, dict_index, men_embed, searchK=params['recall_k'], gold_idxs=gold_idxs, type_idx_mapping=dict_type_idx_mapping)
+        for men_query_idx, men_embed in enumerate(tqdm(men_embeds, total=len(men_embeds), desc="Building graph")):
+            # Get nearest entity candidate
+            dict_cand_idx = nn_ent_idxs[men_query_idx][0]
+            dict_cand_score = nn_ent_dists[men_query_idx][0]
             # Compute recall metric
-            if recall_idx > -1:
+            gold_idxs = mention_data[men_query_idx]["label_idxs"][:mention_data[men_query_idx]["n_labels"]]
+            recall_idx = np.argwhere(dict_cand_idx == gold_idxs[0])
+            if len(recall_idx) != 0:
+                recall_idx = int(recall_idx)
                 recall_idxs[recall_idx] += 1.
                 for recall_k in recall_accuracy:
                     if recall_idx < recall_k:
                         recall_accuracy[recall_k] += 1.
 
             if not params['only_recall']:
-                # Fetch (k+1) NN mention candidates
-                men_cand_idxs, men_cand_scores = get_query_nn(
-                    max_knn + 1, men_embeds, men_index, men_embed, type_idx_mapping=men_type_idx_mapping)
                 # Filter candidates to remove mention query and keep only the top k candidates
+                men_cand_idxs = nn_men_idxs[men_query_idx]
+                men_cand_scores = nn_men_dists[men_query_idx]
+                
                 filter_mask = men_cand_idxs != men_query_idx
                 men_cand_idxs, men_cand_scores = men_cand_idxs[filter_mask][:max_knn], men_cand_scores[filter_mask][:max_knn]
 
