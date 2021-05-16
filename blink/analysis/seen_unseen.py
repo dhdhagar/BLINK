@@ -5,16 +5,29 @@ from IPython import embed
 
 BLINK_ROOT = f'{os.path.abspath(os.path.dirname(__file__))}/../..'
 
-output_file_path = os.path.join(BLINK_ROOT, 'models/trained/medmentions', 'seen_unseen.json')
-train_data_path = os.path.join(BLINK_ROOT, 'models/trained/medmentions', 'train_processed_data.pickle')
+# Zeshel:
+output_file_path = os.path.join(BLINK_ROOT, 'models/trained/zeshel', 'seen_unseen.json')
+train_data_path = os.path.join(BLINK_ROOT, 'models/trained/zeshel', 'train_processed_data.pickle')
 result_paths = {
-    'in-batch (directed)': os.path.join(BLINK_ROOT, 'models/trained/medmentions_blink/eval/wo_type/eval_results_1621123985-directed-1.json'),
-    'in-batch (undirected)': os.path.join(BLINK_ROOT, 'models/trained/medmentions_blink/eval/wo_type/eval_results_1621123985-undirected-1.json'),
-    'knn (directed)': os.path.join(BLINK_ROOT, 'models/trained/medmentions/eval/pos_neg_loss/no_type/wo_type/probe10/eval_results_1621123098-directed-0.json'),
-    'knn (undirected)': os.path.join(BLINK_ROOT, 'models/trained/medmentions/eval/pos_neg_loss/no_type/wo_type/probe10/eval_results_1621123098-undirected-0.json'),
-    'mst (directed)': os.path.join(BLINK_ROOT, 'models/trained/medmentions_mst/eval/pos_neg_loss/no_type/wo_type/eval_results_1621123562-directed-2.json'),
-    'mst (undirected)': os.path.join(BLINK_ROOT, 'models/trained/medmentions_mst/eval/pos_neg_loss/no_type/wo_type/eval_results_1621123562-undirected-1.json')
+    'in-batch (directed)': os.path.join(BLINK_ROOT, 'models/trained/zeshel_og/eval/data_og/directed/eval_results_1620166625-0.json'),
+    'in-batch (undirected)': os.path.join(BLINK_ROOT, 'models/trained/zeshel_og/eval/data_og/directed/eval_results_1620166625-0.json'),
+    'knn (directed)': os.path.join(BLINK_ROOT, 'models/trained/zeshel/eval/pos_neg_loss/directed/eval_results_1620266508-0.json'),
+    'knn (undirected)': os.path.join(BLINK_ROOT, 'models/trained/zeshel/eval/pos_neg_loss/directed/eval_results_1620266508-0.json'),
+    'mst (directed)': os.path.join(BLINK_ROOT, 'models/trained/zeshel_mst/eval/pos_neg_loss/directed/eval_results_1620267157-0.json'),
+    'mst (undirected)': os.path.join(BLINK_ROOT, 'models/trained/zeshel_mst/eval/pos_neg_loss/directed/eval_results_1620267157-0.json')
 }
+
+# MedMentions:
+# output_file_path = os.path.join(BLINK_ROOT, 'models/trained/medmentions', 'seen_unseen.json')
+# train_data_path = os.path.join(BLINK_ROOT, 'models/trained/medmentions', 'train_processed_data.pickle')
+# result_paths = {
+#     'in-batch (directed)': os.path.join(BLINK_ROOT, 'models/trained/medmentions_blink/eval/wo_type/eval_results_1621123985-directed-1.json'),
+#     'in-batch (undirected)': os.path.join(BLINK_ROOT, 'models/trained/medmentions_blink/eval/wo_type/eval_results_1621123985-undirected-1.json'),
+#     'knn (directed)': os.path.join(BLINK_ROOT, 'models/trained/medmentions/eval/pos_neg_loss/no_type/wo_type/probe10/eval_results_1621123098-directed-0.json'),
+#     'knn (undirected)': os.path.join(BLINK_ROOT, 'models/trained/medmentions/eval/pos_neg_loss/no_type/wo_type/probe10/eval_results_1621123098-undirected-0.json'),
+#     'mst (directed)': os.path.join(BLINK_ROOT, 'models/trained/medmentions_mst/eval/pos_neg_loss/no_type/wo_type/eval_results_1621123562-directed-2.json'),
+#     'mst (undirected)': os.path.join(BLINK_ROOT, 'models/trained/medmentions_mst/eval/pos_neg_loss/no_type/wo_type/eval_results_1621123562-undirected-1.json')
+# }
 
 seen_unseen_results = {}
 
