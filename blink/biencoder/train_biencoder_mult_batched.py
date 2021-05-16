@@ -13,9 +13,6 @@ import torch
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler)
 from pytorch_transformers.optimization import WarmupLinearSchedule
 from tqdm import tqdm, trange
-from special_partition.special_partition import cluster_linking_partition
-from scipy.sparse.csgraph import minimum_spanning_tree
-from scipy.sparse import csr_matrix
 
 import blink.biencoder.data_process_mult as data_process
 import blink.biencoder.eval_cluster_linking as eval_cluster_linking
@@ -53,10 +50,10 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
     else:
         print("Eval: Dictionary: Embedding and building index")
         dict_embeds, dict_index = data_process.embed_and_index(
-            reranker, valid_dict_vecs, 'candidate', n_gpu=n_gpu, force_exact_search=force_exact_search, batch_size=embed_batch_size, probe_mult_factor=probe_mult_factor)
+            reranker, valid_dict_vecs, 'candidate', n_gpu=n_gpu, batch_size=embed_batch_size, probe_mult_factor=probe_mult_factor)
         print("Eval: Queries: Embedding and building index")
         men_embeds, men_index = data_process.embed_and_index(
-            reranker, valid_men_vecs, 'context', n_gpu=n_gpu, force_exact_search=force_exact_search, batch_size=embed_batch_size, probe_mult_factor=probe_mult_factor)
+            reranker, valid_men_vecs, 'context', n_gpu=n_gpu, batch_size=embed_batch_size, probe_mult_factor=probe_mult_factor)
 
     for men_query_idx, men_embed in enumerate(tqdm(men_embeds, total=len(men_embeds), desc="Eval: Fetching k-NN")):
         men_embed = np.expand_dims(men_embed, axis=0)
@@ -111,6 +108,60 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
         logger.info(f"Eval accuracy for graph@k={k}: {acc}%")
     logger.info(f"Best eval accuracy: {max_eval_acc}%")
     return max_eval_acc
+
+# ARCHIVED: The evaluate function makes a prediction on a set of knn candidates for every mention
+def evaluate_ind_pred(
+    reranker, valid_dataloader, valid_dict_vecs, params, device, logger, knn, n_gpu, entity_data, query_data, use_types=False, embed_batch_size=768
+):
+    reranker.model.eval()
+    knn = max(16, 2*knn) # Accomodate the approximate-nature of the knn procedure by retrieving more samples and then filtering
+    iter_ = valid_dataloader if params["silent"] else tqdm(valid_dataloader, desc="Evaluation")
+    eval_accuracy = 0.0
+    nb_eval_examples = 0
+    nb_eval_steps = 0
+
+    if not use_types:
+        valid_dict_embeddings, valid_dict_index = data_process.embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, batch_size=embed_batch_size)
+    else:
+        valid_dict_embeddings, valid_dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_data, batch_size=embed_batch_size)
+
+    for step, batch in enumerate(iter_):
+        batch = tuple(t.to(device) for t in batch)
+        context_inputs, candidate_idxs, n_gold, mention_idxs = batch
+        
+        with torch.no_grad():
+            mention_embeddings = reranker.encode_context(context_inputs)
+            # context_inputs: Shape: batch x token_len
+            candidate_inputs = np.array([], dtype=np.int) # Shape: (batch*knn) x token_len
+            label_inputs = torch.zeros((context_inputs.shape[0], knn), dtype=torch.float32) # Shape: batch x knn
+
+            for i, m_embed in enumerate(mention_embeddings):
+                if use_types:
+                    entity_type = query_data[mention_idxs[i]]['type']
+                    valid_dict_index = valid_dict_indexes[entity_type]
+                _, knn_dict_idxs = valid_dict_index.search(np.expand_dims(m_embed, axis=0), knn)
+                knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()
+                if use_types:
+                    # Map type-specific indices to the entire dictionary
+                    knn_dict_idxs = list(map(lambda x: dict_idxs_by_type[entity_type][x], knn_dict_idxs))
+                gold_idxs = candidate_idxs[i][:n_gold[i]].cpu()
+                candidate_inputs = np.concatenate((candidate_inputs, knn_dict_idxs))
+                label_inputs[i] = torch.tensor([1 if nn in gold_idxs else 0 for nn in knn_dict_idxs])
+            candidate_inputs = torch.tensor(list(map(lambda x: valid_dict_vecs[x].numpy(), candidate_inputs))).cuda()
+            context_inputs = context_inputs.cuda()
+            label_inputs = label_inputs.cuda()
+            
+            logits = reranker(context_inputs, candidate_inputs, label_inputs, only_logits=True)
+
+        logits = logits.detach().cpu().numpy()
+        tmp_eval_accuracy = int(torch.sum(label_inputs[np.arange(label_inputs.shape[0]), np.argmax(logits, axis=1)] == 1))
+        eval_accuracy += tmp_eval_accuracy
+        nb_eval_examples += context_inputs.size(0)
+        nb_eval_steps += 1
+
+    normalized_eval_accuracy = eval_accuracy / nb_eval_examples
+    logger.info("Eval accuracy: %.5f" % normalized_eval_accuracy)
+    return normalized_eval_accuracy
 
 def get_optimizer(model, params):
     return get_bert_optimizer(
@@ -293,22 +344,17 @@ def main(params):
 
     # Store the query mention vectors
     valid_men_vecs = valid_tensor_data[:][0]
+    
+    # valid_sampler = SequentialSampler(valid_tensor_data)
+    # valid_dataloader = DataLoader(
+    #     valid_tensor_data, sampler=valid_sampler, batch_size=eval_batch_size
+    # )
 
     if params["only_evaluate"]:
         evaluate(
-            reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"], use_types=use_types or params["use_types_for_eval"], embed_batch_size=params["embed_batch_size"], force_exact_search=use_types or params["use_types_for_eval"] or params["force_exact_search"], probe_mult_factor=params['probe_mult_factor']
+            reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"], use_types=use_types or params["use_types_for_eval"], embed_batch_size=params['embed_batch_size'], force_exact_search=use_types or params["use_types_for_eval"] or params["force_exact_search"], probe_mult_factor=params['probe_mult_factor']
         )
         exit()
-
-    # Get clusters of mentions that map to a gold entity
-    train_gold_clusters = data_process.compute_gold_clusters(train_processed_data)
-    max_gold_cluster_len = 0
-    for ent in train_gold_clusters:
-        if len(train_gold_clusters[ent]) > max_gold_cluster_len:
-            max_gold_cluster_len = len(train_gold_clusters[ent])
-
-    n_entities = len(entity_dictionary)
-    n_mentions = len(train_processed_data)
 
     time_start = time.time()
     utils.write_to_file(
@@ -349,34 +395,22 @@ def main(params):
             if load_stored_data:
                 train_dict_embeddings, dict_idxs_by_type = init_run_data['train_dict_embeddings'], init_run_data['dict_idxs_by_type']
                 train_dict_indexes = data_process.get_index_from_embeds(train_dict_embeddings, dict_idxs_by_type, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
-                train_men_embeddings, men_idxs_by_type = init_run_data['train_men_embeddings'], init_run_data['men_idxs_by_type']
-                train_men_indexes = data_process.get_index_from_embeds(train_men_embeddings, men_idxs_by_type, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
             else:
                 logger.info('Embedding and indexing')
                 train_dict_embeddings, train_dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_dictionary, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
-                train_men_embeddings, train_men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, train_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=train_processed_data, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
         else:
             if load_stored_data:
                 train_dict_embeddings = init_run_data['train_dict_embeddings']
                 train_dict_index = data_process.get_index_from_embeds(train_dict_embeddings, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
-                train_men_embeddings = init_run_data['train_men_embeddings']
-                train_men_index = data_process.get_index_from_embeds(train_men_embeddings, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
             else:
                 logger.info('Embedding and indexing')
                 train_dict_embeddings, train_dict_index = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
-                train_men_embeddings, train_men_index = data_process.embed_and_index(reranker, train_men_vecs, encoder_type="context", n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
+        if load_stored_data:
+            train_men_embeddings = init_run_data['train_men_embeddings']
+        else:
+            train_men_embeddings = data_process.embed_and_index(reranker, train_men_vecs, encoder_type="context", n_gpu=n_gpu, only_embed=True, batch_size=params['embed_batch_size'])
 
-        # Save the initial embeddings and index if this is the first run and data isn't persistent
-        if init_base_model_run and not load_stored_data:
-            init_run_data = {}
-            init_run_data['train_dict_embeddings'] = train_dict_embeddings
-            init_run_data['train_men_embeddings'] = train_men_embeddings
-            if use_types:
-                init_run_data['dict_idxs_by_type'] = dict_idxs_by_type
-                init_run_data['men_idxs_by_type'] = men_idxs_by_type
-            # NOTE: Cannot pickle faiss index because it is a SwigPyObject
-            torch.save(init_run_data, init_run_pkl_path, pickle_protocol=pickle.HIGHEST_PROTOCOL)
-
+        # NOTE: Saving intial embeds and index only throught the MST procedure since that data is a superset of what is used here
         init_base_model_run = False
 
         if params["silent"]:
@@ -384,16 +418,8 @@ def main(params):
         else:
             iter_ = tqdm(train_dataloader, desc="Batch")
 
-        # Store golden MST links
-        gold_links = {}
-
-        # Calculate the number of negative entities and mentions to fetch
-        knn_dict = knn//2
-        knn_men = knn - knn_dict
-
         logger.info("Starting KNN search...")
-        _, dict_nns = train_dict_index.search(train_men_embeddings, knn_dict + 1)
-        _, men_nns = train_men_index.search(train_men_embeddings, knn_men + max_gold_cluster_len)
+        _, dict_nns = train_dict_index.search(train_men_embeddings, knn)
         logger.info("Search finished")
 
         for step, batch in enumerate(iter_):
@@ -402,121 +428,30 @@ def main(params):
             mention_embeddings = train_men_embeddings[mention_idxs.cpu()]
             
             # context_inputs: Shape: batch x token_len
-            # candidate_inputs = []
-            # candidate_inputs = np.array([], dtype=np.long) # Shape: (batch*knn) x token_len
+            candidate_inputs = np.array([], dtype=np.int) # Shape: (batch*knn) x token_len
+            label_inputs = torch.tensor([[1]+[0]*(knn-1)]*n_gold.sum(), dtype=torch.float32) # Shape: batch(with split rows) x knn
+            context_inputs_split = torch.zeros((label_inputs.size(0), context_inputs.size(1)), dtype=torch.long) # Shape: batch(with split rows) x token_len
             # label_inputs = (candidate_idxs >= 0).type(torch.float32) # Shape: batch x knn
 
-            positive_idxs = []
-            negative_dict_inputs = []
-            negative_men_inputs = []
-            
-            for m_embed_idx, m_embed in enumerate(mention_embeddings):
-                mention_idx = int(mention_idxs[m_embed_idx])
-                gold_idxs = set(train_processed_data[mention_idx]['label_idxs'][:n_gold[m_embed_idx]])
-                
-                # TEMPORARY: Assuming that there is only 1 gold label, TODO: Incorporate multiple case
-                assert n_gold[m_embed_idx] == 1
-
-                if mention_idx in gold_links:
-                    gold_link_idx = gold_links[mention_idx]
-                else:
-                    # Run MST on mention clusters of all the gold entities of the current query mention to find its positive edge
-                    rows, cols, data, shape = [], [], [], (n_entities+n_mentions, n_entities+n_mentions)
-                    seen = set()
-                    for cluster_ent in gold_idxs:
-                        cluster_mens = train_gold_clusters[cluster_ent]
-                        
-                        to_ent_data = train_men_embeddings[cluster_mens] @ train_dict_embeddings[cluster_ent].T
-
-                        to_men_data = train_men_embeddings[cluster_mens] @ train_men_embeddings[cluster_mens].T
-                        
-                        for i in range(len(cluster_mens)):
-                            from_node = n_entities + cluster_mens[i]
-                            to_node = cluster_ent
-                            # Add mention-entity link
-                            rows.append(from_node)
-                            cols.append(to_node)
-                            # data.append(-1 * train_men_embeddings[from_node - n_entities] @ train_dict_embeddings[to_node])
-                            data.append(-1 * to_ent_data[i])
-                            # Add forward and reverse mention-mention links
-                            for j in range(i+1, len(cluster_mens)):
-                                to_node = n_entities + cluster_mens[j]
-                                if (from_node, to_node) not in seen:
-                                    # score = train_men_embeddings[from_node - n_entities] @ train_men_embeddings[to_node - n_entities]
-                                    score = to_men_data[i,j]
-                                    rows.append(from_node)
-                                    cols.append(to_node)
-                                    data.append(-1 * score) # Negatives needed for SciPy's Minimum Spanning Tree computation
-                                    seen.add((from_node, to_node))
-                                    seen.add((to_node, from_node))
-
-                    # Find MST with entity constraint
-                    csr = csr_matrix((data, (rows, cols)), shape=shape)
-                    mst = minimum_spanning_tree(csr).tocoo()
-                    rows, cols, data = cluster_linking_partition(np.concatenate((mst.row, mst.col)), 
-                                                                 np.concatenate((mst.col,mst.row)), 
-                                                                 np.concatenate((-mst.data, -mst.data)), 
-                                                                 n_entities, 
-                                                                 directed=True, 
-                                                                 silent=True)
-                    assert np.array_equal(rows - n_entities, train_gold_clusters[cluster_ent])
-                    
-                    for i in range(len(rows)):
-                        men_idx = rows[i] - n_entities
-                        if men_idx in gold_links:
-                            continue
-                        assert men_idx >= 0
-                        add_link = True
-                        # Store the computed positive edges for the mentions in the clusters only if they have the same gold entities as the query mention
-                        for l in train_processed_data[men_idx]['label_idxs'][:train_processed_data[men_idx]['n_labels']]:
-                            if l not in gold_idxs:
-                                add_link = False
-                                break
-                        if add_link:
-                            gold_links[men_idx] = cols[i]
-                    gold_link_idx = gold_links[mention_idx]
-                    
+            for i, m_embed in enumerate(mention_embeddings):
                 if use_types:
-                    entity_type = train_processed_data[mention_idxs[m_embed_idx]]['type']
+                    entity_type = train_processed_data[mention_idxs[i]]['type']
                     train_dict_index = train_dict_indexes[entity_type]
-                    train_men_index = train_men_indexes[entity_type]
-                # _, knn_dict_idxs = train_dict_index.search(np.expand_dims(m_embed, axis=0), knn_dict + int(n_gold[m_embed_idx]))
-                knn_dict_idxs = dict_nns[mention_idx]
+                # _, knn_dict_idxs = train_dict_index.search(np.expand_dims(m_embed, axis=0), (knn + int(n_gold[i]) - 1)) # Fetch NNs to ensure one entity per row
+                knn_dict_idxs = dict_nns[mention_idxs[i]]
                 knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()
-                # _, knn_men_idxs = train_men_index.search(np.expand_dims(m_embed, axis=0), knn_men + sum([len(train_gold_clusters[gi]) for gi in gold_idxs]))
-                knn_men_idxs = men_nns[mention_idx]
-                knn_men_idxs = knn_men_idxs.astype(np.int64).flatten()
                 if use_types:
-                    # Map type-specific indices back to the entire list
+                    # Map type-specific indices to the entire dictionary
                     knn_dict_idxs = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], knn_dict_idxs)), dtype=np.int64)
-                    knn_men_idxs = np.array(list(map(lambda x: men_idxs_by_type[entity_type][x], knn_men_idxs)), dtype=np.int64)
-                # Add the positive example
-                positive_idxs.append(gold_link_idx)
-                # Add the negative examples
-                negative_dict_inputs += list(knn_dict_idxs[~np.isin(knn_dict_idxs, list(gold_idxs))][:knn_dict])
-                negative_men_inputs += list(knn_men_idxs[~np.isin(knn_men_idxs, np.concatenate([train_gold_clusters[gi] for gi in gold_idxs]))][:knn_men])
+                gold_idxs = candidate_idxs[i][:n_gold[i]].cpu()
+                for ng, gold_idx in enumerate(gold_idxs):
+                    context_inputs_split[i+ng] = context_inputs[i]
+                    candidate_inputs = np.concatenate((candidate_inputs, np.concatenate(([gold_idx], knn_dict_idxs[~np.isin(knn_dict_idxs, gold_idxs)]))[:knn]))
+            candidate_inputs = torch.tensor(list(map(lambda x: entity_dict_vecs[x].numpy(), candidate_inputs))).cuda()
+            context_inputs_split = context_inputs_split.cuda()
+            label_inputs = label_inputs.cuda()
             
-            assert len(negative_dict_inputs) == len(mention_embeddings) * knn_dict
-            assert len(negative_men_inputs) == len(mention_embeddings) * knn_men
-            
-            negative_dict_inputs = torch.tensor(list(map(lambda x: entity_dict_vecs[x].numpy(), negative_dict_inputs)))
-            negative_men_inputs = torch.tensor(list(map(lambda x: train_men_vecs[x].numpy(), negative_men_inputs)))
-            positive_embeds = []
-            for pos_idx in positive_idxs:
-                if pos_idx < n_entities:
-                    pos_embed = reranker.encode_candidate(entity_dict_vecs[pos_idx:pos_idx + 1].cuda(), requires_grad=True)
-                else:
-                    pos_embed = reranker.encode_context(train_men_vecs[pos_idx - n_entities:pos_idx - n_entities + 1].cuda(), requires_grad=True)
-                positive_embeds.append(pos_embed)
-            positive_embeds = torch.cat(positive_embeds)
-            context_inputs = context_inputs.cuda()
-            label_inputs = torch.tensor([[1]+[0]*(knn_dict+knn_men)]*len(context_inputs), dtype=torch.float32).cuda()
-            
-            loss, _ = reranker(context_inputs, label_input=label_inputs, mst_data={
-                'positive_embeds': positive_embeds.cuda(),
-                'negative_dict_inputs': negative_dict_inputs.cuda(),
-                'negative_men_inputs': negative_men_inputs.cuda()
-            }, pos_neg_loss=params["pos_neg_loss"])
+            loss, _ = reranker(context_inputs_split, candidate_inputs, label_inputs, pos_neg_loss=params["pos_neg_loss"])
 
             if grad_acc_steps > 1:
                 loss = loss / grad_acc_steps
@@ -546,7 +481,7 @@ def main(params):
             if (step + 1) % (params["eval_interval"] * grad_acc_steps) == 0:
                 logger.info("Evaluation on the development dataset")
                 evaluate(
-                    reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"], use_types=use_types or params["use_types_for_eval"], embed_batch_size=params["embed_batch_size"], force_exact_search=use_types or params["use_types_for_eval"] or params["force_exact_search"], probe_mult_factor=params['probe_mult_factor']
+                    reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"], use_types=use_types or params["use_types_for_eval"], embed_batch_size=params['embed_batch_size'], force_exact_search=use_types or params["use_types_for_eval"] or params["force_exact_search"], probe_mult_factor=params['probe_mult_factor']
                 )
                 model.train()
                 logger.info("\n")
@@ -558,11 +493,11 @@ def main(params):
         utils.save_model(model, tokenizer, epoch_output_folder_path)
         logger.info(f"Model saved at {epoch_output_folder_path}")
 
-        eval_accuracy = evaluate(
-            reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"], use_types=use_types or params["use_types_for_eval"], embed_batch_size=params["embed_batch_size"], force_exact_search=use_types or params["use_types_for_eval"] or params["force_exact_search"], probe_mult_factor=params['probe_mult_factor']
+        normalized_accuracy = evaluate(
+            reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"], use_types=use_types or params["use_types_for_eval"], embed_batch_size=params['embed_batch_size'], force_exact_search=use_types or params["use_types_for_eval"] or params["force_exact_search"], probe_mult_factor=params['probe_mult_factor']
         )
 
-        ls = [best_score, eval_accuracy]
+        ls = [best_score, normalized_accuracy]
         li = [best_epoch_idx, epoch_idx]
 
         best_score = ls[np.argmax(ls)]
