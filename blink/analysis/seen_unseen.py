@@ -17,7 +17,7 @@ BLINK_ROOT = f'{os.path.abspath(os.path.dirname(__file__))}/../..'
 #     'mst (undirected)': os.path.join(BLINK_ROOT, 'models/trained/zeshel_mst/eval/pos_neg_loss/directed/eval_results_1620267157-0.json')
 # }
 
-MedMentions:
+# MedMentions:
 output_file_path = os.path.join(BLINK_ROOT, 'models/trained/medmentions', 'seen_unseen.json')
 train_data_path = os.path.join(BLINK_ROOT, 'models/trained/medmentions', 'train_processed_data.pickle')
 result_paths = {
