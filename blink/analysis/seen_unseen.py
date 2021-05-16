@@ -21,9 +21,9 @@ if __name__ == '__main__':
     with open(train_data_path, 'rb') as read_handle:
         train_data = pickle.load(read_handle)
     
-    mention_ids = set()
+    seen_cui_ids = set()
     for mention in train_data:
-        mention_ids.add(mention['mention_id'])
+        seen_cui_ids.add(mention['label_cuis'][0])
 
     n_seen_in_test = 0.
     total_seen_computed = False
@@ -36,14 +36,14 @@ if __name__ == '__main__':
         overall_acc = float(results['accuracy'].split(' ')[0]) # Percentage
 
         for m in results['success']:
-            if m['mention_id'] in mention_ids:
+            if m['mention_gold_cui'] in seen_cui_ids:
                 if not total_seen_computed:
                     n_seen_in_test += 1
                 n_correct_seen += 1
 
         if not total_seen_computed:
             for m in results['failure']:
-                if m['mention_id'] in mention_ids:
+                if m['mention_gold_cui'] in seen_cui_ids:
                     n_seen_in_test += 1
             total_seen_computed = True
 
