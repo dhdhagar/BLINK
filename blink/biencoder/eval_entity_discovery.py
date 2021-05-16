@@ -119,7 +119,7 @@ def analyzeClusters(clusters, gold_cluster_labels, n_entities, n_mentions, logge
     result = (nmi + rand_index) / 2
     logger.info(f"NMI={nmi}, rand_index={rand_index} => average={result}")
 
-    return result
+    return {'rand_index': rand_index, 'nmi': nmi, 'average': result}
 
 def main(params):
     time_start = time.time()
@@ -309,8 +309,8 @@ def main(params):
                     # Analyze cluster against gold clusters
                     result = analyzeClusters(clusters, mention_gold_cui_idxs, n_entities, n_mentions, logger)
                     results[f'({mode}, {k}, {thresh})'] = result
-                    if thresh != 0 and result > best_result:
-                        best_result = result
+                    if thresh != 0 and result['average'] > best_result:
+                        best_result = result['average']
                         best_config = (mode, k, thresh)
         results[f'best_{mode}_config'] = best_config
         results[f'best_{mode}_result'] = best_result
