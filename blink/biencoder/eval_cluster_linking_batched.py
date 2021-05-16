@@ -396,8 +396,8 @@ def main(params):
 
         logger.info('Starting knn search')
 
-        # Fetch 64 knn entities for all mentions
-        nn_ent_dists, nn_ent_idxs = dict_index.search(men_embeds, 64)
+        # Fetch recall_k (default 16) knn entities for all mentions
+        nn_ent_dists, nn_ent_idxs = dict_index.search(men_embeds, params['recall_k'])
         # Fetch (k+1) NN mention candidates
         nn_men_dists, nn_men_idxs = men_index.search(men_embeds, max_knn + 1)
 
