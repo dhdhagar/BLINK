@@ -420,12 +420,12 @@ def main(params):
 
         logger.info("Starting KNN search...")
         if not use_types:
-            _, dict_nns = train_dict_index.search(train_men_embeddings, knn_dict + 1)
+            _, dict_nns = train_dict_index.search(train_men_embeddings, knn)
         else:
-            dict_nns = np.zeros((len(train_men_embeddings), knn_dict + 1))
+            dict_nns = np.zeros((len(train_men_embeddings), knn))
             for entity_type in train_men_indexes:
                 men_embeds_by_type = train_men_embeddings[men_idxs_by_type[entity_type]]
-                _, dict_nns_by_type = train_dict_indexes[entity_type].search(men_embeds_by_type, knn_dict + 1)
+                _, dict_nns_by_type = train_dict_indexes[entity_type].search(men_embeds_by_type, knn)
                 dict_nns_idxs = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], dict_nns_by_type)))
                 for i,idx in enumerate(men_idxs_by_type[entity_type]):
                     dict_nns[idx] = dict_nns_idxs[i]
