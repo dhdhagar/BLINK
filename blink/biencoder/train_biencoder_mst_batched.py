@@ -392,8 +392,21 @@ def main(params):
         knn_men = knn - knn_dict
 
         logger.info("Starting KNN search...")
-        _, dict_nns = train_dict_index.search(train_men_embeddings, knn_dict + 1)
-        _, men_nns = train_men_index.search(train_men_embeddings, knn_men + max_gold_cluster_len)
+        if not use_types:
+            _, dict_nns = train_dict_index.search(train_men_embeddings, knn_dict + 1)
+            _, men_nns = train_men_index.search(train_men_embeddings, knn_men + max_gold_cluster_len)
+        else:
+            dict_nns = np.zeros(len(train_men_embeddings), knn_dict + 1)
+            men_nns = np.zeros(len(train_men_embeddings), knn_men + max_gold_cluster_len)
+            for entity_type in train_men_indexes:
+                men_embeds_by_type = train_men_embeddings[men_idxs_by_type[entity_type]]
+                _, dict_nns_by_type = train_dict_indexes[entity_type].search(men_embeds_by_type, knn_dict + 1)
+                _, men_nns_by_type = train_men_indexes[entity_type].search(men_embeds_by_type, knn_men + max_gold_cluster_len)
+                dict_nns_idxs = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], dict_nns_by_type)))
+                men_nns_idxs = np.array(list(map(lambda x: men_idxs_by_type[entity_type][x], men_nns_by_type)))
+                for i,idx in enumerate(men_idxs_by_type[entity_type]):
+                    dict_nns[idx] = dict_nns_idxs[i]
+                    men_nns[idx] = men_nns_idxs[i]
         logger.info("Search finished")
 
         for step, batch in enumerate(iter_):
@@ -476,20 +489,12 @@ def main(params):
                             gold_links[men_idx] = cols[i]
                     gold_link_idx = gold_links[mention_idx]
                     
-                if use_types:
-                    entity_type = train_processed_data[mention_idxs[m_embed_idx]]['type']
-                    train_dict_index = train_dict_indexes[entity_type]
-                    train_men_index = train_men_indexes[entity_type]
-                # _, knn_dict_idxs = train_dict_index.search(np.expand_dims(m_embed, axis=0), knn_dict + int(n_gold[m_embed_idx]))
+                # Retrieve the pre-computed nearest neighbours
                 knn_dict_idxs = dict_nns[mention_idx]
                 knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()
-                # _, knn_men_idxs = train_men_index.search(np.expand_dims(m_embed, axis=0), knn_men + sum([len(train_gold_clusters[gi]) for gi in gold_idxs]))
                 knn_men_idxs = men_nns[mention_idx]
                 knn_men_idxs = knn_men_idxs.astype(np.int64).flatten()
-                if use_types:
-                    # Map type-specific indices back to the entire list
-                    knn_dict_idxs = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], knn_dict_idxs)), dtype=np.int64)
-                    knn_men_idxs = np.array(list(map(lambda x: men_idxs_by_type[entity_type][x], knn_men_idxs)), dtype=np.int64)
+
                 # Add the positive example
                 positive_idxs.append(gold_link_idx)
                 # Add the negative examples
