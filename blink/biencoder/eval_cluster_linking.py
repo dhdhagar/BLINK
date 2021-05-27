@@ -394,36 +394,51 @@ def main(params):
         recall_accuracy = {2**i: 0 for i in range(int(math.log(params['recall_k'], 2)) + 1)}
         recall_idxs = [0.]*params['recall_k']
 
-        logger.info('Starting knn search')
+        logger.info("Starting KNN search...")
+        # Fetch recall_k (default 16) knn entities for all mentions
+        # Fetch (k+1) NN mention candidates
+        if not use_types:
+            nn_ent_dists, nn_ent_idxs = dict_index.search(men_embeds, params['recall_k'])
+            nn_men_dists, nn_men_idxs = men_index.search(men_embeds, max_knn + 1)
+        else:
+            nn_ent_idxs = np.zeros((len(men_embeds), params['recall_k']))
+            nn_ent_dists = np.zeros((len(men_embeds), params['recall_k']), dtype='float64')
+            nn_men_idxs = np.zeros((len(men_embeds), max_knn + 1))
+            nn_men_dists = np.zeros((len(men_embeds), max_knn + 1), dtype='float64')
+            for entity_type in men_indexes:
+                men_embeds_by_type = men_embeds[men_idxs_by_type[entity_type]]
+                nn_ent_dists_by_type, nn_ent_idxs_by_type = dict_indexes[entity_type].search(men_embeds_by_type, params['recall_k'])
+                nn_men_dists_by_type, nn_men_idxs_by_type = men_indexes[entity_type].search(men_embeds_by_type, max_knn + 1)
+                nn_ent_idxs_by_type = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], nn_ent_idxs_by_type)))
+                nn_men_idxs_by_type = np.array(list(map(lambda x: men_idxs_by_type[entity_type][x], nn_men_idxs_by_type)))
+                for i,idx in enumerate(men_idxs_by_type[entity_type]):
+                    nn_ent_idxs[idx] = nn_ent_idxs_by_type[i]
+                    nn_ent_dists[idx] = nn_ent_dists_by_type[i]
+                    nn_men_idxs[idx] = nn_men_idxs_by_type[i]
+                    nn_men_dists[idx] = nn_men_dists_by_type[i]
+        logger.info("Search finished")
 
+        logger.info('Building graphs')
         # Find the most similar entity and k-nn mentions for each mention query
-        for men_query_idx, men_embed in enumerate(tqdm(men_embeds, total=len(men_embeds), desc="Fetching k-NN")):
-            men_embed = np.expand_dims(men_embed, axis=0)
-            
-            dict_type_idx_mapping, men_type_idx_mapping = None, None
-            if use_types:
-                entity_type = mention_data[men_query_idx]['type']
-                dict_index = dict_indexes[entity_type]
-                men_index = men_indexes[entity_type]
-                dict_type_idx_mapping = dict_idxs_by_type[entity_type]
-                men_type_idx_mapping = men_idxs_by_type[entity_type]
-            
-            # Fetch nearest entity candidate
-            gold_idxs = mention_data[men_query_idx]["label_idxs"][:mention_data[men_query_idx]["n_labels"]]
-            dict_cand_idx, dict_cand_score, recall_idx = get_query_nn(
-                1, dict_embeds, dict_index, men_embed, searchK=params['recall_k'], gold_idxs=gold_idxs, type_idx_mapping=dict_type_idx_mapping)
+        for men_query_idx, men_embed in enumerate(tqdm(men_embeds, total=len(men_embeds), desc="Building graph")):
+            # Get nearest entity candidate
+            dict_cand_idx = nn_ent_idxs[men_query_idx][0]
+            dict_cand_score = nn_ent_dists[men_query_idx][0]
             # Compute recall metric
-            if recall_idx > -1:
+            gold_idxs = mention_data[men_query_idx]["label_idxs"][:mention_data[men_query_idx]["n_labels"]]
+            recall_idx = np.argwhere(nn_ent_idxs[men_query_idx] == gold_idxs[0])
+            if len(recall_idx) != 0:
+                recall_idx = int(recall_idx)
                 recall_idxs[recall_idx] += 1.
                 for recall_k in recall_accuracy:
                     if recall_idx < recall_k:
                         recall_accuracy[recall_k] += 1.
 
             if not params['only_recall']:
-                # Fetch (k+1) NN mention candidates
-                men_cand_idxs, men_cand_scores = get_query_nn(
-                    max_knn + 1, men_embeds, men_index, men_embed, type_idx_mapping=men_type_idx_mapping)
                 # Filter candidates to remove mention query and keep only the top k candidates
+                men_cand_idxs = nn_men_idxs[men_query_idx]
+                men_cand_scores = nn_men_dists[men_query_idx]
+                
                 filter_mask = men_cand_idxs != men_query_idx
                 men_cand_idxs, men_cand_scores = men_cand_idxs[filter_mask][:max_knn], men_cand_scores[filter_mask][:max_knn]
 

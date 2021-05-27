@@ -43,36 +43,52 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
         }
 
     if use_types:
-        print("Eval: Dictionary: Embedding and building index")
+        logger.info("Eval: Dictionary: Embedding and building index")
         dict_embeds, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_data, force_exact_search=force_exact_search, batch_size=embed_batch_size, probe_mult_factor=probe_mult_factor)
-        print("Eval: Queries: Embedding and building index")
+        logger.info("Eval: Queries: Embedding and building index")
         men_embeds, men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, valid_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=query_data, force_exact_search=force_exact_search, batch_size=embed_batch_size, probe_mult_factor=probe_mult_factor)
     else:
-        print("Eval: Dictionary: Embedding and building index")
+        logger.info("Eval: Dictionary: Embedding and building index")
         dict_embeds, dict_index = data_process.embed_and_index(
-            reranker, valid_dict_vecs, 'candidate', n_gpu=n_gpu, batch_size=embed_batch_size, probe_mult_factor=probe_mult_factor)
-        print("Eval: Queries: Embedding and building index")
+            reranker, valid_dict_vecs, 'candidate', n_gpu=n_gpu, force_exact_search=force_exact_search, batch_size=embed_batch_size, probe_mult_factor=probe_mult_factor)
+        logger.info("Eval: Queries: Embedding and building index")
         men_embeds, men_index = data_process.embed_and_index(
-            reranker, valid_men_vecs, 'context', n_gpu=n_gpu, batch_size=embed_batch_size, probe_mult_factor=probe_mult_factor)
-
-    for men_query_idx, men_embed in enumerate(tqdm(men_embeds, total=len(men_embeds), desc="Eval: Fetching k-NN")):
-        men_embed = np.expand_dims(men_embed, axis=0)
+            reranker, valid_men_vecs, 'context', n_gpu=n_gpu, force_exact_search=force_exact_search, batch_size=embed_batch_size, probe_mult_factor=probe_mult_factor)
+    
+    logger.info("Eval: Starting KNN search...")
+    # Fetch recall_k (default 16) knn entities for all mentions
+    # Fetch (k+1) NN mention candidates
+    if not use_types:
+        nn_ent_dists, nn_ent_idxs = dict_index.search(men_embeds, 1)
+        nn_men_dists, nn_men_idxs = men_index.search(men_embeds, max_knn + 1)
+    else:
+        nn_ent_idxs = np.zeros((len(men_embeds), 1))
+        nn_ent_dists = np.zeros((len(men_embeds), 1), dtype='float64')
+        nn_men_idxs = np.zeros((len(men_embeds), max_knn + 1))
+        nn_men_dists = np.zeros((len(men_embeds), max_knn + 1), dtype='float64')
+        for entity_type in men_indexes:
+            men_embeds_by_type = men_embeds[men_idxs_by_type[entity_type]]
+            nn_ent_dists_by_type, nn_ent_idxs_by_type = dict_indexes[entity_type].search(men_embeds_by_type, 1)
+            nn_men_dists_by_type, nn_men_idxs_by_type = men_indexes[entity_type].search(men_embeds_by_type, max_knn + 1)
+            nn_ent_idxs_by_type = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], nn_ent_idxs_by_type)))
+            nn_men_idxs_by_type = np.array(list(map(lambda x: men_idxs_by_type[entity_type][x], nn_men_idxs_by_type)))
+            for i,idx in enumerate(men_idxs_by_type[entity_type]):
+                nn_ent_idxs[idx] = nn_ent_idxs_by_type[i]
+                nn_ent_dists[idx] = nn_ent_dists_by_type[i]
+                nn_men_idxs[idx] = nn_men_idxs_by_type[i]
+                nn_men_dists[idx] = nn_men_dists_by_type[i]
+    logger.info("Eval: Search finished")
+    
+    logger.info('Eval: Building graphs')
+    for men_query_idx, men_embed in enumerate(tqdm(men_embeds, total=len(men_embeds), desc="Eval: Building graphs")):
+        # Get nearest entity candidate
+        dict_cand_idx = nn_ent_idxs[men_query_idx][0]
+        dict_cand_score = nn_ent_dists[men_query_idx][0]
         
-        dict_type_idx_mapping, men_type_idx_mapping = None, None
-        if use_types:
-            entity_type = query_data[men_query_idx]['type']
-            dict_index = dict_indexes[entity_type]
-            men_index = men_indexes[entity_type]
-            dict_type_idx_mapping = dict_idxs_by_type[entity_type]
-            men_type_idx_mapping = men_idxs_by_type[entity_type]
-        
-        # Fetch nearest entity candidate
-        dict_cand_idx, dict_cand_score = eval_cluster_linking.get_query_nn(
-            1, dict_embeds, dict_index, men_embed, type_idx_mapping=dict_type_idx_mapping)
-        # Fetch (k+1) NN mention candidates
-        men_cand_idxs, men_cand_scores = eval_cluster_linking.get_query_nn(
-            max_knn + 1, men_embeds, men_index, men_embed, type_idx_mapping=men_type_idx_mapping)
         # Filter candidates to remove mention query and keep only the top k candidates
+        men_cand_idxs = nn_men_idxs[men_query_idx]
+        men_cand_scores = nn_men_dists[men_query_idx]
+        
         filter_mask = men_cand_idxs != men_query_idx
         men_cand_idxs, men_cand_scores = men_cand_idxs[filter_mask][:max_knn], men_cand_scores[filter_mask][:max_knn]
 
@@ -97,7 +113,7 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
     
     max_eval_acc = -1.
     for k in joint_graphs:
-        print(f"\nGraph (k={k}):")
+        logger.info(f"\nEval: Graph (k={k}):")
         # Partition graph based on cluster-linking constraints
         partitioned_graph, clusters = eval_cluster_linking.partition_graph(
             joint_graphs[k], n_entities, directed=True, return_clusters=True)
@@ -105,9 +121,9 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
         result = eval_cluster_linking.analyzeClusters(clusters, entity_data, query_data, k)
         acc = float(result['accuracy'].split(' ')[0])
         max_eval_acc = max(acc, max_eval_acc)
-        logger.info(f"Eval accuracy for graph@k={k}: {acc}%")
-    logger.info(f"Best eval accuracy: {max_eval_acc}%")
-    return max_eval_acc
+        logger.info(f"Eval: accuracy for graph@k={k}: {acc}%")
+    logger.info(f"Eval: Best accuracy: {max_eval_acc}%")
+    return max_eval_acc, {'dict_embeds': dict_embeds, 'dict_indexes': dict_indexes, 'dict_idxs_by_type': dict_idxs_by_type} if use_types else {'dict_embeds': dict_embeds, 'dict_index': dict_index}
 
 # ARCHIVED: The evaluate function makes a prediction on a set of knn candidates for every mention
 def evaluate_ind_pred(
@@ -375,6 +391,8 @@ def main(params):
     init_base_model_run = True if params.get("path_to_model", None) is None else False
     init_run_pkl_path = os.path.join(pickle_src_path, f'init_run_{"type" if use_types else "notype"}.t7')
 
+    dict_embed_data = None
+
     for epoch_idx in trange(int(num_train_epochs), desc="Epoch"):
         model.train()
         torch.cuda.empty_cache()
@@ -385,6 +403,7 @@ def main(params):
         init_run_data_loaded = False
         if init_base_model_run:
             if os.path.isfile(init_run_pkl_path):
+                logger.info('Loading init run data')
                 init_run_data = torch.load(init_run_pkl_path)
                 init_run_data_loaded = True
         load_stored_data = init_base_model_run and init_run_data_loaded
@@ -394,26 +413,59 @@ def main(params):
             if load_stored_data:
                 train_dict_embeddings, dict_idxs_by_type = init_run_data['train_dict_embeddings'], init_run_data['dict_idxs_by_type']
                 train_dict_indexes = data_process.get_index_from_embeds(train_dict_embeddings, dict_idxs_by_type, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
+                train_men_embeddings, men_idxs_by_type = init_run_data['train_men_embeddings'], init_run_data['men_idxs_by_type']
+                train_men_indexes = data_process.get_index_from_embeds(train_men_embeddings, men_idxs_by_type, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
             else:
-                train_dict_embeddings, train_dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_dictionary, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
+                logger.info('Embedding and indexing')
+                if dict_embed_data is not None:
+                    train_dict_embeddings, train_dict_indexes, dict_idxs_by_type = dict_embed_data['dict_embeds'], dict_embed_data['dict_indexes'], dict_embed_data['dict_idxs_by_type']
+                else:
+                    train_dict_embeddings, train_dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_dictionary, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
+                train_men_embeddings, train_men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, train_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=train_processed_data, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
         else:
             if load_stored_data:
                 train_dict_embeddings = init_run_data['train_dict_embeddings']
                 train_dict_index = data_process.get_index_from_embeds(train_dict_embeddings, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
+                train_men_embeddings = init_run_data['train_men_embeddings']
+                train_men_index = data_process.get_index_from_embeds(train_men_embeddings, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
             else:
-                train_dict_embeddings, train_dict_index = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
-        if load_stored_data:
-            train_men_embeddings = init_run_data['train_men_embeddings']
-        else:
-            train_men_embeddings = data_process.embed_and_index(reranker, train_men_vecs, encoder_type="context", n_gpu=n_gpu, only_embed=True, batch_size=params['embed_batch_size'])
+                logger.info('Embedding and indexing')
+                if dict_embed_data is not None:
+                    train_dict_embeddings, train_dict_index = dict_embed_data['dict_embeds'], dict_embed_data['dict_index']
+                else:
+                    train_dict_embeddings, train_dict_index = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
+                train_men_embeddings, train_men_index = data_process.embed_and_index(reranker, train_men_vecs, encoder_type="context", n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
 
-        # NOTE: Saving intial embeds and index only throught the MST procedure since that data is a superset of what is used here
+        # Save the initial embeddings and index if this is the first run and data isn't persistent
+        if init_base_model_run and not load_stored_data:
+            init_run_data = {}
+            init_run_data['train_dict_embeddings'] = train_dict_embeddings
+            init_run_data['train_men_embeddings'] = train_men_embeddings
+            if use_types:
+                init_run_data['dict_idxs_by_type'] = dict_idxs_by_type
+                init_run_data['men_idxs_by_type'] = men_idxs_by_type
+            # NOTE: Cannot pickle faiss index because it is a SwigPyObject
+            torch.save(init_run_data, init_run_pkl_path, pickle_protocol=pickle.HIGHEST_PROTOCOL)
+
         init_base_model_run = False
 
         if params["silent"]:
             iter_ = train_dataloader
         else:
             iter_ = tqdm(train_dataloader, desc="Batch")
+
+        logger.info("Starting KNN search...")
+        if not use_types:
+            _, dict_nns = train_dict_index.search(train_men_embeddings, knn)
+        else:
+            dict_nns = np.zeros((len(train_men_embeddings), knn))
+            for entity_type in train_men_indexes:
+                men_embeds_by_type = train_men_embeddings[men_idxs_by_type[entity_type]]
+                _, dict_nns_by_type = train_dict_indexes[entity_type].search(men_embeds_by_type, knn)
+                dict_nns_idxs = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], dict_nns_by_type)))
+                for i,idx in enumerate(men_idxs_by_type[entity_type]):
+                    dict_nns[idx] = dict_nns_idxs[i]
+        logger.info("Search finished")
 
         for step, batch in enumerate(iter_):
             batch = tuple(t.to(device) for t in batch)
@@ -427,14 +479,8 @@ def main(params):
             # label_inputs = (candidate_idxs >= 0).type(torch.float32) # Shape: batch x knn
 
             for i, m_embed in enumerate(mention_embeddings):
-                if use_types:
-                    entity_type = train_processed_data[mention_idxs[i]]['type']
-                    train_dict_index = train_dict_indexes[entity_type]
-                _, knn_dict_idxs = train_dict_index.search(np.expand_dims(m_embed, axis=0), (knn + int(n_gold[i]) - 1)) # Fetch NNs to ensure one entity per row
+                knn_dict_idxs = dict_nns[mention_idxs[i]]
                 knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()
-                if use_types:
-                    # Map type-specific indices to the entire dictionary
-                    knn_dict_idxs = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], knn_dict_idxs)), dtype=np.int64)
                 gold_idxs = candidate_idxs[i][:n_gold[i]].cpu()
                 for ng, gold_idx in enumerate(gold_idxs):
                     context_inputs_split[i+ng] = context_inputs[i]
@@ -485,7 +531,7 @@ def main(params):
         utils.save_model(model, tokenizer, epoch_output_folder_path)
         logger.info(f"Model saved at {epoch_output_folder_path}")
 
-        normalized_accuracy = evaluate(
+        normalized_accuracy, dict_embed_data = evaluate(
             reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"], use_types=use_types or params["use_types_for_eval"], embed_batch_size=params['embed_batch_size'], force_exact_search=use_types or params["use_types_for_eval"] or params["force_exact_search"], probe_mult_factor=params['probe_mult_factor']
         )
 

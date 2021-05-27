@@ -46,36 +46,52 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
         }
 
     if use_types:
-        print("Eval: Dictionary: Embedding and building index")
+        logger.info("Eval: Dictionary: Embedding and building index")
         dict_embeds, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_data, force_exact_search=force_exact_search, batch_size=embed_batch_size, probe_mult_factor=probe_mult_factor)
-        print("Eval: Queries: Embedding and building index")
+        logger.info("Eval: Queries: Embedding and building index")
         men_embeds, men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, valid_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=query_data, force_exact_search=force_exact_search, batch_size=embed_batch_size, probe_mult_factor=probe_mult_factor)
     else:
-        print("Eval: Dictionary: Embedding and building index")
+        logger.info("Eval: Dictionary: Embedding and building index")
         dict_embeds, dict_index = data_process.embed_and_index(
             reranker, valid_dict_vecs, 'candidate', n_gpu=n_gpu, force_exact_search=force_exact_search, batch_size=embed_batch_size, probe_mult_factor=probe_mult_factor)
-        print("Eval: Queries: Embedding and building index")
+        logger.info("Eval: Queries: Embedding and building index")
         men_embeds, men_index = data_process.embed_and_index(
             reranker, valid_men_vecs, 'context', n_gpu=n_gpu, force_exact_search=force_exact_search, batch_size=embed_batch_size, probe_mult_factor=probe_mult_factor)
-
-    for men_query_idx, men_embed in enumerate(tqdm(men_embeds, total=len(men_embeds), desc="Eval: Fetching k-NN")):
-        men_embed = np.expand_dims(men_embed, axis=0)
+    
+    logger.info("Eval: Starting KNN search...")
+    # Fetch recall_k (default 16) knn entities for all mentions
+    # Fetch (k+1) NN mention candidates
+    if not use_types:
+        nn_ent_dists, nn_ent_idxs = dict_index.search(men_embeds, 1)
+        nn_men_dists, nn_men_idxs = men_index.search(men_embeds, max_knn + 1)
+    else:
+        nn_ent_idxs = np.zeros((len(men_embeds), 1))
+        nn_ent_dists = np.zeros((len(men_embeds), 1), dtype='float64')
+        nn_men_idxs = np.zeros((len(men_embeds), max_knn + 1))
+        nn_men_dists = np.zeros((len(men_embeds), max_knn + 1), dtype='float64')
+        for entity_type in men_indexes:
+            men_embeds_by_type = men_embeds[men_idxs_by_type[entity_type]]
+            nn_ent_dists_by_type, nn_ent_idxs_by_type = dict_indexes[entity_type].search(men_embeds_by_type, 1)
+            nn_men_dists_by_type, nn_men_idxs_by_type = men_indexes[entity_type].search(men_embeds_by_type, max_knn + 1)
+            nn_ent_idxs_by_type = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], nn_ent_idxs_by_type)))
+            nn_men_idxs_by_type = np.array(list(map(lambda x: men_idxs_by_type[entity_type][x], nn_men_idxs_by_type)))
+            for i,idx in enumerate(men_idxs_by_type[entity_type]):
+                nn_ent_idxs[idx] = nn_ent_idxs_by_type[i]
+                nn_ent_dists[idx] = nn_ent_dists_by_type[i]
+                nn_men_idxs[idx] = nn_men_idxs_by_type[i]
+                nn_men_dists[idx] = nn_men_dists_by_type[i]
+    logger.info("Eval: Search finished")
+    
+    logger.info('Eval: Building graphs')
+    for men_query_idx, men_embed in enumerate(tqdm(men_embeds, total=len(men_embeds), desc="Eval: Building graphs")):
+        # Get nearest entity candidate
+        dict_cand_idx = nn_ent_idxs[men_query_idx][0]
+        dict_cand_score = nn_ent_dists[men_query_idx][0]
         
-        dict_type_idx_mapping, men_type_idx_mapping = None, None
-        if use_types:
-            entity_type = query_data[men_query_idx]['type']
-            dict_index = dict_indexes[entity_type]
-            men_index = men_indexes[entity_type]
-            dict_type_idx_mapping = dict_idxs_by_type[entity_type]
-            men_type_idx_mapping = men_idxs_by_type[entity_type]
-        
-        # Fetch nearest entity candidate
-        dict_cand_idx, dict_cand_score = eval_cluster_linking.get_query_nn(
-            1, dict_embeds, dict_index, men_embed, type_idx_mapping=dict_type_idx_mapping)
-        # Fetch (k+1) NN mention candidates
-        men_cand_idxs, men_cand_scores = eval_cluster_linking.get_query_nn(
-            max_knn + 1, men_embeds, men_index, men_embed, type_idx_mapping=men_type_idx_mapping)
         # Filter candidates to remove mention query and keep only the top k candidates
+        men_cand_idxs = nn_men_idxs[men_query_idx]
+        men_cand_scores = nn_men_dists[men_query_idx]
+        
         filter_mask = men_cand_idxs != men_query_idx
         men_cand_idxs, men_cand_scores = men_cand_idxs[filter_mask][:max_knn], men_cand_scores[filter_mask][:max_knn]
 
@@ -100,7 +116,7 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
     
     max_eval_acc = -1.
     for k in joint_graphs:
-        print(f"\nGraph (k={k}):")
+        logger.info(f"\nEval: Graph (k={k}):")
         # Partition graph based on cluster-linking constraints
         partitioned_graph, clusters = eval_cluster_linking.partition_graph(
             joint_graphs[k], n_entities, directed=True, return_clusters=True)
@@ -108,9 +124,9 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
         result = eval_cluster_linking.analyzeClusters(clusters, entity_data, query_data, k)
         acc = float(result['accuracy'].split(' ')[0])
         max_eval_acc = max(acc, max_eval_acc)
-        logger.info(f"Eval accuracy for graph@k={k}: {acc}%")
-    logger.info(f"Best eval accuracy: {max_eval_acc}%")
-    return max_eval_acc
+        logger.info(f"Eval: accuracy for graph@k={k}: {acc}%")
+    logger.info(f"Eval: Best accuracy: {max_eval_acc}%")
+    return max_eval_acc, {'dict_embeds': dict_embeds, 'dict_indexes': dict_indexes, 'dict_idxs_by_type': dict_idxs_by_type} if use_types else {'dict_embeds': dict_embeds, 'dict_index': dict_index}
 
 def get_optimizer(model, params):
     return get_bert_optimizer(
@@ -170,7 +186,6 @@ def main(params):
         params["train_batch_size"] // params["gradient_accumulation_steps"]
     )
     train_batch_size = params["train_batch_size"]
-    eval_batch_size = params["eval_batch_size"]
     grad_acc_steps = params["gradient_accumulation_steps"]
 
     # Fix the random seeds
@@ -302,6 +317,11 @@ def main(params):
 
     # Get clusters of mentions that map to a gold entity
     train_gold_clusters = data_process.compute_gold_clusters(train_processed_data)
+    max_gold_cluster_len = 0
+    for ent in train_gold_clusters:
+        if len(train_gold_clusters[ent]) > max_gold_cluster_len:
+            max_gold_cluster_len = len(train_gold_clusters[ent])
+
     n_entities = len(entity_dictionary)
     n_mentions = len(train_processed_data)
 
@@ -324,6 +344,8 @@ def main(params):
     init_base_model_run = True if params.get("path_to_model", None) is None else False
     init_run_pkl_path = os.path.join(pickle_src_path, f'init_run_{"type" if use_types else "notype"}.t7')
 
+    dict_embed_data = None
+
     for epoch_idx in trange(int(num_train_epochs), desc="Epoch"):
         model.train()
         torch.cuda.empty_cache()
@@ -334,6 +356,7 @@ def main(params):
         init_run_data_loaded = False
         if init_base_model_run:
             if os.path.isfile(init_run_pkl_path):
+                logger.info('Loading init run data')
                 init_run_data = torch.load(init_run_pkl_path)
                 init_run_data_loaded = True
         load_stored_data = init_base_model_run and init_run_data_loaded
@@ -346,7 +369,11 @@ def main(params):
                 train_men_embeddings, men_idxs_by_type = init_run_data['train_men_embeddings'], init_run_data['men_idxs_by_type']
                 train_men_indexes = data_process.get_index_from_embeds(train_men_embeddings, men_idxs_by_type, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
             else:
-                train_dict_embeddings, train_dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_dictionary, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
+                logger.info('Embedding and indexing')
+                if dict_embed_data is not None:
+                    train_dict_embeddings, train_dict_indexes, dict_idxs_by_type = dict_embed_data['dict_embeds'], dict_embed_data['dict_indexes'], dict_embed_data['dict_idxs_by_type']
+                else:
+                    train_dict_embeddings, train_dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_dictionary, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
                 train_men_embeddings, train_men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, train_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=train_processed_data, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
         else:
             if load_stored_data:
@@ -355,7 +382,11 @@ def main(params):
                 train_men_embeddings = init_run_data['train_men_embeddings']
                 train_men_index = data_process.get_index_from_embeds(train_men_embeddings, force_exact_search=params['force_exact_search'], probe_mult_factor=params['probe_mult_factor'])
             else:
-                train_dict_embeddings, train_dict_index = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
+                logger.info('Embedding and indexing')
+                if dict_embed_data is not None:
+                    train_dict_embeddings, train_dict_index = dict_embed_data['dict_embeds'], dict_embed_data['dict_index']
+                else:
+                    train_dict_embeddings, train_dict_index = data_process.embed_and_index(reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
                 train_men_embeddings, train_men_index = data_process.embed_and_index(reranker, train_men_vecs, encoder_type="context", n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
 
         # Save the initial embeddings and index if this is the first run and data isn't persistent
@@ -378,6 +409,28 @@ def main(params):
 
         # Store golden MST links
         gold_links = {}
+
+        # Calculate the number of negative entities and mentions to fetch
+        knn_dict = knn//2
+        knn_men = knn - knn_dict
+
+        logger.info("Starting KNN search...")
+        if not use_types:
+            _, dict_nns = train_dict_index.search(train_men_embeddings, knn_dict + 1)
+            _, men_nns = train_men_index.search(train_men_embeddings, knn_men + max_gold_cluster_len)
+        else:
+            dict_nns = np.zeros((len(train_men_embeddings), knn_dict + 1))
+            men_nns = np.zeros((len(train_men_embeddings), knn_men + max_gold_cluster_len))
+            for entity_type in train_men_indexes:
+                men_embeds_by_type = train_men_embeddings[men_idxs_by_type[entity_type]]
+                _, dict_nns_by_type = train_dict_indexes[entity_type].search(men_embeds_by_type, knn_dict + 1)
+                _, men_nns_by_type = train_men_indexes[entity_type].search(men_embeds_by_type, knn_men + max_gold_cluster_len)
+                dict_nns_idxs = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], dict_nns_by_type)))
+                men_nns_idxs = np.array(list(map(lambda x: men_idxs_by_type[entity_type][x], men_nns_by_type)))
+                for i,idx in enumerate(men_idxs_by_type[entity_type]):
+                    dict_nns[idx] = dict_nns_idxs[i]
+                    men_nns[idx] = men_nns_idxs[i]
+        logger.info("Search finished")
 
         for step, batch in enumerate(iter_):
             batch = tuple(t.to(device) for t in batch)
@@ -408,18 +461,25 @@ def main(params):
                     seen = set()
                     for cluster_ent in gold_idxs:
                         cluster_mens = train_gold_clusters[cluster_ent]
+                        
+                        to_ent_data = train_men_embeddings[cluster_mens] @ train_dict_embeddings[cluster_ent].T
+
+                        to_men_data = train_men_embeddings[cluster_mens] @ train_men_embeddings[cluster_mens].T
+                        
                         for i in range(len(cluster_mens)):
                             from_node = n_entities + cluster_mens[i]
                             to_node = cluster_ent
                             # Add mention-entity link
                             rows.append(from_node)
                             cols.append(to_node)
-                            data.append(-1 * train_men_embeddings[from_node - n_entities] @ train_dict_embeddings[to_node])
+                            # data.append(-1 * train_men_embeddings[from_node - n_entities] @ train_dict_embeddings[to_node])
+                            data.append(-1 * to_ent_data[i])
                             # Add forward and reverse mention-mention links
                             for j in range(i+1, len(cluster_mens)):
                                 to_node = n_entities + cluster_mens[j]
                                 if (from_node, to_node) not in seen:
-                                    score = train_men_embeddings[from_node - n_entities] @ train_men_embeddings[to_node - n_entities]
+                                    # score = train_men_embeddings[from_node - n_entities] @ train_men_embeddings[to_node - n_entities]
+                                    score = to_men_data[i,j]
                                     rows.append(from_node)
                                     cols.append(to_node)
                                     data.append(-1 * score) # Negatives needed for SciPy's Minimum Spanning Tree computation
@@ -452,21 +512,12 @@ def main(params):
                             gold_links[men_idx] = cols[i]
                     gold_link_idx = gold_links[mention_idx]
                     
-                # Calculate the number of negative entities and mentions to fetch
-                knn_dict = knn//2
-                knn_men = knn - knn_dict
-                if use_types:
-                    entity_type = train_processed_data[mention_idxs[m_embed_idx]]['type']
-                    train_dict_index = train_dict_indexes[entity_type]
-                    train_men_index = train_men_indexes[entity_type]
-                _, knn_dict_idxs = train_dict_index.search(np.expand_dims(m_embed, axis=0), knn_dict + int(n_gold[m_embed_idx]))
+                # Retrieve the pre-computed nearest neighbours
+                knn_dict_idxs = dict_nns[mention_idx]
                 knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()
-                _, knn_men_idxs = train_men_index.search(np.expand_dims(m_embed, axis=0), knn_men + sum([len(train_gold_clusters[gi]) for gi in gold_idxs]))
+                knn_men_idxs = men_nns[mention_idx]
                 knn_men_idxs = knn_men_idxs.astype(np.int64).flatten()
-                if use_types:
-                    # Map type-specific indices back to the entire list
-                    knn_dict_idxs = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], knn_dict_idxs)), dtype=np.int64)
-                    knn_men_idxs = np.array(list(map(lambda x: men_idxs_by_type[entity_type][x], knn_men_idxs)), dtype=np.int64)
+
                 # Add the positive example
                 positive_idxs.append(gold_link_idx)
                 # Add the negative examples
@@ -535,7 +586,7 @@ def main(params):
         utils.save_model(model, tokenizer, epoch_output_folder_path)
         logger.info(f"Model saved at {epoch_output_folder_path}")
 
-        eval_accuracy = evaluate(
+        eval_accuracy, dict_embed_data = evaluate(
             reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu, entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"], use_types=use_types or params["use_types_for_eval"], embed_batch_size=params["embed_batch_size"], force_exact_search=use_types or params["use_types_for_eval"] or params["force_exact_search"], probe_mult_factor=params['probe_mult_factor']
         )
 
