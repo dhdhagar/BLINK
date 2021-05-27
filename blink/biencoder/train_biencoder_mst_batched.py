@@ -170,7 +170,6 @@ def main(params):
         params["train_batch_size"] // params["gradient_accumulation_steps"]
     )
     train_batch_size = params["train_batch_size"]
-    eval_batch_size = params["eval_batch_size"]
     grad_acc_steps = params["gradient_accumulation_steps"]
 
     # Fix the random seeds
@@ -396,8 +395,8 @@ def main(params):
             _, dict_nns = train_dict_index.search(train_men_embeddings, knn_dict + 1)
             _, men_nns = train_men_index.search(train_men_embeddings, knn_men + max_gold_cluster_len)
         else:
-            dict_nns = np.zeros(len(train_men_embeddings), knn_dict + 1)
-            men_nns = np.zeros(len(train_men_embeddings), knn_men + max_gold_cluster_len)
+            dict_nns = np.zeros((len(train_men_embeddings), knn_dict + 1))
+            men_nns = np.zeros((len(train_men_embeddings), knn_men + max_gold_cluster_len))
             for entity_type in train_men_indexes:
                 men_embeds_by_type = train_men_embeddings[men_idxs_by_type[entity_type]]
                 _, dict_nns_by_type = train_dict_indexes[entity_type].search(men_embeds_by_type, knn_dict + 1)
