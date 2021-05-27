@@ -419,7 +419,16 @@ def main(params):
             iter_ = tqdm(train_dataloader, desc="Batch")
 
         logger.info("Starting KNN search...")
-        _, dict_nns = train_dict_index.search(train_men_embeddings, knn)
+        if not use_types:
+            _, dict_nns = train_dict_index.search(train_men_embeddings, knn_dict + 1)
+        else:
+            dict_nns = np.zeros((len(train_men_embeddings), knn_dict + 1))
+            for entity_type in train_men_indexes:
+                men_embeds_by_type = train_men_embeddings[men_idxs_by_type[entity_type]]
+                _, dict_nns_by_type = train_dict_indexes[entity_type].search(men_embeds_by_type, knn_dict + 1)
+                dict_nns_idxs = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], dict_nns_by_type)))
+                for i,idx in enumerate(men_idxs_by_type[entity_type]):
+                    dict_nns[idx] = dict_nns_idxs[i]
         logger.info("Search finished")
 
         for step, batch in enumerate(iter_):
@@ -434,15 +443,8 @@ def main(params):
             # label_inputs = (candidate_idxs >= 0).type(torch.float32) # Shape: batch x knn
 
             for i, m_embed in enumerate(mention_embeddings):
-                if use_types:
-                    entity_type = train_processed_data[mention_idxs[i]]['type']
-                    train_dict_index = train_dict_indexes[entity_type]
-                # _, knn_dict_idxs = train_dict_index.search(np.expand_dims(m_embed, axis=0), (knn + int(n_gold[i]) - 1)) # Fetch NNs to ensure one entity per row
                 knn_dict_idxs = dict_nns[mention_idxs[i]]
                 knn_dict_idxs = knn_dict_idxs.astype(np.int64).flatten()
-                if use_types:
-                    # Map type-specific indices to the entire dictionary
-                    knn_dict_idxs = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], knn_dict_idxs)), dtype=np.int64)
                 gold_idxs = candidate_idxs[i][:n_gold[i]].cpu()
                 for ng, gold_idx in enumerate(gold_idxs):
                     context_inputs_split[i+ng] = context_inputs[i]
