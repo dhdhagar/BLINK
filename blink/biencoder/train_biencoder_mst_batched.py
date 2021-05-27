@@ -46,36 +46,53 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
         }
 
     if use_types:
-        print("Eval: Dictionary: Embedding and building index")
+        logger.info("Eval: Dictionary: Embedding and building index")
         dict_embeds, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, valid_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_data, force_exact_search=force_exact_search, batch_size=embed_batch_size, probe_mult_factor=probe_mult_factor)
-        print("Eval: Queries: Embedding and building index")
+        logger.info("Eval: Queries: Embedding and building index")
         men_embeds, men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, valid_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=query_data, force_exact_search=force_exact_search, batch_size=embed_batch_size, probe_mult_factor=probe_mult_factor)
     else:
-        print("Eval: Dictionary: Embedding and building index")
+        logger.info("Eval: Dictionary: Embedding and building index")
         dict_embeds, dict_index = data_process.embed_and_index(
             reranker, valid_dict_vecs, 'candidate', n_gpu=n_gpu, force_exact_search=force_exact_search, batch_size=embed_batch_size, probe_mult_factor=probe_mult_factor)
-        print("Eval: Queries: Embedding and building index")
+        logger.info("Eval: Queries: Embedding and building index")
         men_embeds, men_index = data_process.embed_and_index(
             reranker, valid_men_vecs, 'context', n_gpu=n_gpu, force_exact_search=force_exact_search, batch_size=embed_batch_size, probe_mult_factor=probe_mult_factor)
 
-    for men_query_idx, men_embed in enumerate(tqdm(men_embeds, total=len(men_embeds), desc="Eval: Fetching k-NN")):
-        men_embed = np.expand_dims(men_embed, axis=0)
+    
+    logger.info("Eval: Starting KNN search...")
+    # Fetch recall_k (default 16) knn entities for all mentions
+    # Fetch (k+1) NN mention candidates
+    if not use_types:
+        nn_ent_dists, nn_ent_idxs = dict_index.search(men_embeds, 1)
+        nn_men_dists, nn_men_idxs = men_index.search(men_embeds, max_knn + 1)
+    else:
+        nn_ent_idxs = np.zeros((len(men_embeds), 1))
+        nn_ent_dists = np.zeros((len(men_embeds), 1), dtype='float64')
+        nn_men_idxs = np.zeros((len(men_embeds), max_knn + 1))
+        nn_men_dists = np.zeros((len(men_embeds), max_knn + 1), dtype='float64')
+        for entity_type in men_indexes:
+            men_embeds_by_type = men_embeds[men_idxs_by_type[entity_type]]
+            nn_ent_dists_by_type, nn_ent_idxs_by_type = dict_indexes[entity_type].search(men_embeds_by_type, 1)
+            nn_men_dists_by_type, nn_men_idxs_by_type = men_indexes[entity_type].search(men_embeds_by_type, max_knn + 1)
+            nn_ent_idxs_by_type = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], nn_ent_idxs_by_type)))
+            nn_men_idxs_by_type = np.array(list(map(lambda x: men_idxs_by_type[entity_type][x], nn_men_idxs_by_type)))
+            for i,idx in enumerate(men_idxs_by_type[entity_type]):
+                nn_ent_idxs[idx] = nn_ent_idxs_by_type[i]
+                nn_ent_dists[idx] = nn_ent_dists_by_type[i]
+                nn_men_idxs[idx] = nn_men_idxs_by_type[i]
+                nn_men_dists[idx] = nn_men_dists_by_type[i]
+    logger.info("Eval: Search finished")
+    
+    logger.info('Eval: Building graphs')
+    for men_query_idx, men_embed in enumerate(tqdm(men_embeds, total=len(men_embeds), desc="Eval: Building graphs")):
+        # Get nearest entity candidate
+        dict_cand_idx = nn_ent_idxs[men_query_idx][0]
+        dict_cand_score = nn_ent_dists[men_query_idx][0]
         
-        dict_type_idx_mapping, men_type_idx_mapping = None, None
-        if use_types:
-            entity_type = query_data[men_query_idx]['type']
-            dict_index = dict_indexes[entity_type]
-            men_index = men_indexes[entity_type]
-            dict_type_idx_mapping = dict_idxs_by_type[entity_type]
-            men_type_idx_mapping = men_idxs_by_type[entity_type]
-        
-        # Fetch nearest entity candidate
-        dict_cand_idx, dict_cand_score = eval_cluster_linking.get_query_nn(
-            1, dict_embeds, dict_index, men_embed, type_idx_mapping=dict_type_idx_mapping)
-        # Fetch (k+1) NN mention candidates
-        men_cand_idxs, men_cand_scores = eval_cluster_linking.get_query_nn(
-            max_knn + 1, men_embeds, men_index, men_embed, type_idx_mapping=men_type_idx_mapping)
         # Filter candidates to remove mention query and keep only the top k candidates
+        men_cand_idxs = nn_men_idxs[men_query_idx]
+        men_cand_scores = nn_men_dists[men_query_idx]
+        
         filter_mask = men_cand_idxs != men_query_idx
         men_cand_idxs, men_cand_scores = men_cand_idxs[filter_mask][:max_knn], men_cand_scores[filter_mask][:max_knn]
 
@@ -100,7 +117,7 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
     
     max_eval_acc = -1.
     for k in joint_graphs:
-        print(f"\nGraph (k={k}):")
+        logger.info(f"\nEval: Graph (k={k}):")
         # Partition graph based on cluster-linking constraints
         partitioned_graph, clusters = eval_cluster_linking.partition_graph(
             joint_graphs[k], n_entities, directed=True, return_clusters=True)
@@ -108,8 +125,8 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
         result = eval_cluster_linking.analyzeClusters(clusters, entity_data, query_data, k)
         acc = float(result['accuracy'].split(' ')[0])
         max_eval_acc = max(acc, max_eval_acc)
-        logger.info(f"Eval accuracy for graph@k={k}: {acc}%")
-    logger.info(f"Best eval accuracy: {max_eval_acc}%")
+        logger.info(f"Eval: accuracy for graph@k={k}: {acc}%")
+    logger.info(f"Eval: Best accuracy: {max_eval_acc}%")
     return max_eval_acc
 
 def get_optimizer(model, params):
