@@ -112,6 +112,7 @@ def process_mention_data(
     title_token=ENT_TITLE_TAG,
     debug=False,
     logger=None,
+    drop_entities=[]
 ):
     processed_samples = []
 
@@ -128,7 +129,12 @@ def process_mention_data(
     id_to_idx = {}
     label_id_is_int = True
 
+    drop_entities_set = set(drop_entities)
+
     for idx, sample in enumerate(iter_):
+        if sample["label_id"] in drop_entities_set:
+            continue
+        
         context_tokens = get_context_representation(
             sample,
             tokenizer,

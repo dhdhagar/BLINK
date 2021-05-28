@@ -226,6 +226,25 @@ def main(params):
                 train_samples = list(filter(lambda sample: (len(sample["labels"]) > 0) if mult_labels else (sample["label"] is not None), train_samples))
             logger.info("Read %d train samples." % len(train_samples))
 
+            # For discovery experiment: Drop entities used in training that were dropped randomly from dev/test set
+            if params["drop_entities"] is not None:
+                drop_set_pkl_path = os.path.join(pickle_src_path, 'drop_set_mention_data.pickle')
+                with open(drop_set_pkl_path, 'rb') as read_handle:
+                    drop_set_data = pickle.load(read_handle)
+                drop_set_mention_gold_cui_idxs = list(map(lambda x: x['label_idxs'][0], drop_set_data))
+                ents_in_data = np.unique(drop_set_mention_gold_cui_idxs)
+                ent_drop_prop = 0.1
+                logger.info(f"Dropping {ent_drop_prop*100}% of {len(ents_in_data)} entities found in drop set")
+                # Get entity indices to drop
+                n_ents_dropped = int(ent_drop_prop*len(ents_in_data))
+                rng = np.random.default_rng(seed=17)
+                dropped_ent_idxs = rng.choice(ents_in_data, size=n_ents_dropped, replace=False)
+
+                # Drop entities from dictionary (subsequent processing will automatically drop corresponding mentions)
+                keep_mask = np.ones(len(entity_dictionary), dtype='bool')
+                keep_mask[dropped_ent_idxs] = False
+                entity_dictionary = entity_dictionary[keep_mask]
+
             train_processed_data, entity_dictionary, train_tensor_data = data_process.process_mention_data(
                 train_samples,
                 entity_dictionary,

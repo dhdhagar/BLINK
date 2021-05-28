@@ -116,6 +116,10 @@ def main(params):
         os.makedirs(model_output_path)
     logger = utils.get_logger(params["output_path"])
 
+    pickle_src_path = params["pickle_src_path"]
+    if pickle_src_path is None or not os.path.exists(pickle_src_path):
+        pickle_src_path = model_output_path
+
     # Init model
     reranker = BiEncoderRanker(params)
     tokenizer = reranker.tokenizer
@@ -154,6 +158,20 @@ def main(params):
     train_samples = utils.read_dataset("train", params["data_path"])
     logger.info("Read %d train samples." % len(train_samples))
 
+    dropped_ent_cuis = []
+    if params["drop_entities"] is not None:
+        drop_set_pkl_path = os.path.join(pickle_src_path, 'drop_set_mention_data.pickle')
+        with open(drop_set_pkl_path, 'rb') as read_handle:
+            drop_set_data = pickle.load(read_handle)
+        drop_set_mention_gold_cuis = list(map(lambda x: x['label_cuis'][0], drop_set_data))
+        ents_in_data = np.unique(drop_set_mention_gold_cuis)
+        ent_drop_prop = 0.1
+        logger.info(f"Dropping {ent_drop_prop*100}% of {len(ents_in_data)} entities found in drop set")
+        # Get entity indices to drop
+        n_ents_dropped = int(ent_drop_prop*len(ents_in_data))
+        rng = np.random.default_rng(seed=17)
+        dropped_ent_cuis = rng.choice(ents_in_data, size=n_ents_dropped, replace=False)
+
     train_data, train_tensor_data = data.process_mention_data(
         train_samples,
         tokenizer,
@@ -163,6 +181,7 @@ def main(params):
         silent=params["silent"],
         logger=logger,
         debug=params["debug"],
+        drop_entities=dropped_ent_cuis
     )
     if params["shuffle"]:
         train_sampler = RandomSampler(train_tensor_data)
