@@ -243,7 +243,7 @@ def main(params):
                 # Drop entities from dictionary (subsequent processing will automatically drop corresponding mentions)
                 keep_mask = np.ones(len(entity_dictionary), dtype='bool')
                 keep_mask[dropped_ent_idxs] = False
-                entity_dictionary = entity_dictionary[keep_mask]
+                entity_dictionary = np.array(entity_dictionary)[keep_mask]
 
             train_processed_data, entity_dictionary, train_tensor_data = data_process.process_mention_data(
                 train_samples,
