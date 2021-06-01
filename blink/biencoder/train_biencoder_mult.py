@@ -279,7 +279,7 @@ def main(params):
             logger.info("Read %d train samples." % len(train_samples))
 
             # For discovery experiment: Drop entities used in training that were dropped randomly from dev/test set
-            if params["drop_entities"] is not None:
+            if params["drop_entities"]:
                 drop_set_pkl_path = os.path.join(pickle_src_path, 'drop_set_mention_data.pickle')
                 with open(drop_set_pkl_path, 'rb') as read_handle:
                     drop_set_data = pickle.load(read_handle)
