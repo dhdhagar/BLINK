@@ -283,6 +283,10 @@ class BlinkParser(argparse.ArgumentParser):
             "--use_types_for_eval", action="store_true",
             help="Whether to use type information during evaluation when --use_types is False",
         )
+        parser.add_argument(
+            "--drop_entities", action="store_true",
+            help="Drop entities at random before training for entity discovery experiments",
+        )
 
     def add_eval_args(self, args=None):
         """
