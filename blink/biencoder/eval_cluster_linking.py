@@ -141,7 +141,7 @@ def partition_graph(graph, n_entities, directed, return_clusters=False):
     return partitioned_graph
 
 
-def analyzeClusters(clusters, dictionary, queries, knn):
+def analyzeClusters(clusters, dictionary, queries, knn, n_train_mentions=0):
     """
     Parameters
     ----------
@@ -196,6 +196,10 @@ def analyzeClusters(clusters, dictionary, queries, knn):
                 pred_entity_idxs.append(cluster[i])
                 # Predict based on all entities in the cluster
                 pred_entity_cuis += list(set([dictionary[cluster[i]]['cui']]) - set(pred_entity_cuis))
+                continue
+            men_idx -= n_train_mentions
+            if men_idx < 0:
+                # Query is from train set
                 continue
             _debug_n_mens_evaluated += 1
             men_query = queries[men_idx]
@@ -256,6 +260,8 @@ def main(params):
     test_dictionary_pkl_path = os.path.join(pickle_src_path, 'test_dictionary.pickle')
     test_tensor_data_pkl_path = os.path.join(pickle_src_path, 'test_tensor_data.pickle')
     test_mention_data_pkl_path = os.path.join(pickle_src_path, 'test_mention_data.pickle')
+    train_tensor_data_pkl_path = os.path.join(pickle_src_path, 'train_tensor_data.pickle')
+    train_mention_data_pkl_path = os.path.join(pickle_src_path, 'train_mention_data.pickle')
     if os.path.isfile(test_dictionary_pkl_path):
         print("Loading stored processed entity dictionary...")
         with open(test_dictionary_pkl_path, 'rb') as read_handle:
@@ -299,13 +305,14 @@ def main(params):
             with open(test_dictionary_pkl_path, 'wb') as write_handle:
                 pickle.dump(test_dictionary, write_handle,
                             protocol=pickle.HIGHEST_PROTOCOL)
+            entity_dictionary_loaded = True
         with open(test_tensor_data_pkl_path, 'wb') as write_handle:
             pickle.dump(test_tensor_data, write_handle,
                         protocol=pickle.HIGHEST_PROTOCOL)
         with open(test_mention_data_pkl_path, 'wb') as write_handle:
             pickle.dump(mention_data, write_handle,
                         protocol=pickle.HIGHEST_PROTOCOL)
-
+    
     # Store test dictionary token ids
     test_dict_vecs = torch.tensor(
         list(map(lambda x: x['ids'], test_dictionary)), dtype=torch.long)
@@ -314,6 +321,47 @@ def main(params):
 
     n_entities = len(test_dict_vecs)
     n_mentions = len(test_tensor_data)
+
+    if params["transductive"]:
+        if os.path.isfile(train_tensor_data_pkl_path) and os.path.isfile(train_mention_data_pkl_path):
+            print("Loading stored processed train data...")
+            with open(train_tensor_data_pkl_path, 'rb') as read_handle:
+                train_tensor_data = pickle.load(read_handle)
+            with open(train_mention_data_pkl_path, 'rb') as read_handle:
+                train_mention_data = pickle.load(read_handle)
+        else:
+            train_samples = utils.read_dataset('train', params["data_path"])
+
+            # Check if dataset has multiple ground-truth labels
+            mult_labels = "labels" in train_samples[0].keys()
+            logger.info("Read %d test samples." % len(test_samples))
+
+            train_mention_data, _, train_tensor_data = data_process.process_mention_data(
+                train_samples,
+                test_dictionary,
+                tokenizer,
+                params["max_context_length"],
+                params["max_cand_length"],
+                multi_label_key="labels" if mult_labels else None,
+                context_key=params["context_key"],
+                silent=params["silent"],
+                logger=logger,
+                debug=params["debug"],
+                knn=knn,
+                dictionary_processed=entity_dictionary_loaded
+            )
+            print("Saving processed train data...")
+            with open(train_tensor_data_pkl_path, 'wb') as write_handle:
+                pickle.dump(train_tensor_data, write_handle,
+                            protocol=pickle.HIGHEST_PROTOCOL)
+            with open(train_mention_data_pkl_path, 'wb') as write_handle:
+                pickle.dump(train_mention_data, write_handle,
+                            protocol=pickle.HIGHEST_PROTOCOL)
+
+        # Store train mention token ids
+        train_men_vecs = train_tensor_data[:][0]
+        n_mentions += len(train_tensor_data)
+        n_train_mentions = len(train_tensor_data)
 
     # Values of k to run the evaluation against
     knn_vals = [0] + [2**i for i in range(int(math.log(knn, 2)) + 1)]
@@ -365,7 +413,12 @@ def main(params):
                 logger.info("Dictionary: Embedding and building index")
                 dict_embeds, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(reranker, test_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=test_dictionary, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
                 logger.info("Queries: Embedding and building index")
-                men_embeds, men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, test_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=mention_data, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
+                vecs = test_men_vecs
+                men_data = mention_data
+                if params['transductive']:
+                    vecs = torch.cat((train_men_vecs, vecs), dim=0)
+                    men_data = train_mention_data + mention_data
+                men_embeds, men_indexes, men_idxs_by_type = data_process.embed_and_index(reranker, vecs, encoder_type="context", n_gpu=n_gpu, corpus=men_data, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
         else:
             if embed_data is not None:
                 logger.info('Loading stored embeddings and computing indexes')
@@ -378,8 +431,11 @@ def main(params):
                 dict_embeds, dict_index = data_process.embed_and_index(
                     reranker, test_dict_vecs, 'candidate', n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
                 logger.info("Queries: Embedding and building index")
+                vecs = test_men_vecs
+                if params['transductive']:
+                    vecs = torch.cat((train_men_vecs, vecs), dim=0)
                 men_embeds, men_index = data_process.embed_and_index(
-                    reranker, test_men_vecs, 'context', n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
+                    reranker, vecs, 'context', n_gpu=n_gpu, force_exact_search=params['force_exact_search'], batch_size=params['embed_batch_size'], probe_mult_factor=params['probe_mult_factor'])
 
         # Save computed embedding data if not loaded from disk
         if embed_data is None:
@@ -399,20 +455,30 @@ def main(params):
         # Fetch recall_k (default 16) knn entities for all mentions
         # Fetch (k+1) NN mention candidates
         if not use_types:
-            nn_ent_dists, nn_ent_idxs = dict_index.search(men_embeds, params['recall_k'])
-            nn_men_dists, nn_men_idxs = men_index.search(men_embeds, max_knn + 1)
+            _men_embeds = men_embeds
+            if params['transductive']:
+                _men_embeds = _men_embeds[n_train_mentions:]
+            nn_ent_dists, nn_ent_idxs = dict_index.search(_men_embeds, params['recall_k'])
+            nn_men_dists, nn_men_idxs = men_index.search(_men_embeds, max_knn + 1)
         else:
-            nn_ent_idxs = np.zeros((len(men_embeds), params['recall_k']))
-            nn_ent_dists = np.zeros((len(men_embeds), params['recall_k']), dtype='float64')
-            nn_men_idxs = np.zeros((len(men_embeds), max_knn + 1))
-            nn_men_dists = np.zeros((len(men_embeds), max_knn + 1), dtype='float64')
+            query_len = len(men_embeds) - (n_train_mentions if params['transductive'] else 0)
+            nn_ent_idxs = np.zeros((query_len, params['recall_k']))
+            nn_ent_dists = np.zeros((query_len, params['recall_k']), dtype='float64')
+            nn_men_idxs = np.zeros((query_len, max_knn + 1))
+            nn_men_dists = np.zeros((query_len, max_knn + 1), dtype='float64')
             for entity_type in men_indexes:
-                men_embeds_by_type = men_embeds[men_idxs_by_type[entity_type]]
+                men_embeds_by_type = men_embeds[men_idxs_by_type[entity_type][men_idxs_by_type[entity_type] >= n_train_mentions]] if params['transductive'] else men_embeds[men_idxs_by_type[entity_type]]
                 nn_ent_dists_by_type, nn_ent_idxs_by_type = dict_indexes[entity_type].search(men_embeds_by_type, params['recall_k'])
                 nn_men_dists_by_type, nn_men_idxs_by_type = men_indexes[entity_type].search(men_embeds_by_type, max_knn + 1)
                 nn_ent_idxs_by_type = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], nn_ent_idxs_by_type)))
                 nn_men_idxs_by_type = np.array(list(map(lambda x: men_idxs_by_type[entity_type][x], nn_men_idxs_by_type)))
-                for i,idx in enumerate(men_idxs_by_type[entity_type]):
+                i = -1
+                for idx in men_idxs_by_type[entity_type]:
+                    if params['transductive']:
+                        idx -= n_train_mentions
+                    if idx < 0:
+                        continue
+                    i += 1
                     nn_ent_idxs[idx] = nn_ent_idxs_by_type[i]
                     nn_ent_dists[idx] = nn_ent_dists_by_type[i]
                     nn_men_idxs[idx] = nn_men_idxs_by_type[i]
@@ -421,34 +487,35 @@ def main(params):
 
         logger.info('Building graphs')
         # Find the most similar entity and k-nn mentions for each mention query
-        for men_query_idx, men_embed in enumerate(tqdm(men_embeds, total=len(men_embeds), desc="Building graph")):
+        for idx in range(len(nn_ent_idxs)):
             # Get nearest entity candidate
-            dict_cand_idx = nn_ent_idxs[men_query_idx][0]
-            dict_cand_score = nn_ent_dists[men_query_idx][0]
+            dict_cand_idx = nn_ent_idxs[idx][0]
+            dict_cand_score = nn_ent_dists[idx][0]
             # Compute recall metric
-            gold_idxs = mention_data[men_query_idx]["label_idxs"][:mention_data[men_query_idx]["n_labels"]]
-            recall_idx = np.argwhere(nn_ent_idxs[men_query_idx] == gold_idxs[0])
+            gold_idxs = mention_data[idx]["label_idxs"][:mention_data[idx]["n_labels"]]
+            recall_idx = np.argwhere(nn_ent_idxs[idx] == gold_idxs[0])
             if len(recall_idx) != 0:
                 recall_idx = int(recall_idx)
                 recall_idxs[recall_idx] += 1.
                 for recall_k in recall_accuracy:
                     if recall_idx < recall_k:
                         recall_accuracy[recall_k] += 1.
-
             if not params['only_recall']:
                 # Filter candidates to remove mention query and keep only the top k candidates
-                men_cand_idxs = nn_men_idxs[men_query_idx]
-                men_cand_scores = nn_men_dists[men_query_idx]
+                men_cand_idxs = nn_men_idxs[idx]
+                men_cand_scores = nn_men_dists[idx]
                 
-                filter_mask = men_cand_idxs != men_query_idx
+                filter_mask = men_cand_idxs != idx
                 men_cand_idxs, men_cand_scores = men_cand_idxs[filter_mask][:max_knn], men_cand_scores[filter_mask][:max_knn]
 
+                if params['transductive']:
+                    idx += n_train_mentions
                 # Add edges to the graphs
                 for k in joint_graphs:
                     joint_graph = joint_graphs[k]
                     # Add mention-entity edge
                     joint_graph['rows'] = np.append(
-                        joint_graph['rows'], [n_entities+men_query_idx])  # Mentions added at an offset of maximum entities
+                        joint_graph['rows'], [n_entities+idx])  # Mentions added at an offset of maximum entities
                     joint_graph['cols'] = np.append(
                         joint_graph['cols'], dict_cand_idx)
                     joint_graph['data'] = np.append(
@@ -456,12 +523,25 @@ def main(params):
                     if k > 0:
                         # Add mention-mention edges
                         joint_graph['rows'] = np.append(
-                            joint_graph['rows'], [n_entities+men_query_idx]*len(men_cand_idxs[:k]))
+                            joint_graph['rows'], [n_entities+idx]*len(men_cand_idxs[:k]))
                         joint_graph['cols'] = np.append(
                             joint_graph['cols'], n_entities+men_cand_idxs[:k])
                         joint_graph['data'] = np.append(
                             joint_graph['data'], men_cand_scores[:k])
-
+        
+        if params['transductive']:
+            # Add positive infinity mention-entity edges from training queries to labeled entities
+            for idx,train_men in enumerate(train_mention_data):
+                dict_cand_idx = train_men["label_idxs"][0]
+                for k in joint_graphs:
+                    joint_graph = joint_graphs[k]
+                    joint_graph['rows'] = np.append(
+                        joint_graph['rows'], [n_entities+idx])  # Mentions added at an offset of maximum entities
+                    joint_graph['cols'] = np.append(
+                        joint_graph['cols'], dict_cand_idx)
+                    joint_graph['data'] = np.append(
+                        joint_graph['data'], float('inf'))
+    
         # Compute and print recall metric
         recall_idx_mode = np.argmax(recall_idxs)
         recall_idx_mode_prop = recall_idxs[recall_idx_mode]/np.sum(recall_idxs)
@@ -508,7 +588,7 @@ def main(params):
                 partitioned_graph, clusters = partition_graph(
                     joint_graphs[k], n_entities, mode == 'directed', return_clusters=True)
                 # Infer predictions from clusters
-                result = analyzeClusters(clusters, test_dictionary, mention_data, k)
+                result = analyzeClusters(clusters, test_dictionary, mention_data, k, n_train_mentions if params['transductive'] else 0)
                 # Store result
                 results[mode].append(result)
                 n_graphs_processed += 1
