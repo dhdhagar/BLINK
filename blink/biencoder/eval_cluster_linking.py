@@ -546,11 +546,11 @@ def main(params):
         recall_idx_mode = np.argmax(recall_idxs)
         recall_idx_mode_prop = recall_idxs[recall_idx_mode]/np.sum(recall_idxs)
         logger.info(f"""
-        Recall metrics (for {len(men_embeds)} queries):
+        Recall metrics (for {len(nn_ent_idxs)} queries):
         ---------------""")
         logger.info(f"highest recall idx = {recall_idx_mode} ({recall_idxs[recall_idx_mode]}/{np.sum(recall_idxs)} = {recall_idx_mode_prop})")
         for recall_k in recall_accuracy:
-            recall_accuracy[recall_k] /= len(men_embeds)
+            recall_accuracy[recall_k] /= len(nn_ent_idxs)
             logger.info(f"recall@{recall_k} = {recall_accuracy[recall_k]}")
 
         if params['only_recall']:
@@ -566,7 +566,7 @@ def main(params):
     
     result_overview = {
         'n_entities': n_entities,
-        'n_mentions': n_mentions
+        'n_mentions': n_mentions - (n_train_mentions if params['transductive'] else 0)
     }
     results = {}
     if graph_mode is None or graph_mode not in ['directed', 'undirected']:

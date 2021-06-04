@@ -229,7 +229,7 @@ def main(params):
 
             # For discovery experiment: Drop entities used in training that were dropped randomly from dev/test set
             if params["drop_entities"]:
-                drop_set_pkl_path = os.path.join(pickle_src_path, 'drop_set_mention_data.pickle')
+                drop_set_pkl_path = os.path.join(pickle_src_path, 'drop_set_mention_data.pickle') # Dev or test mention data
                 with open(drop_set_pkl_path, 'rb') as read_handle:
                     drop_set_data = pickle.load(read_handle)
                 drop_set_mention_gold_cui_idxs = list(map(lambda x: x['label_idxs'][0], drop_set_data))
