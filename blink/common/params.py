@@ -330,6 +330,10 @@ class BlinkParser(argparse.ArgumentParser):
         )
         # Cluster-linking arguments
         parser.add_argument(
+            "--only_compute_embeds", action="store_true",
+            help="Whether to exit the script after embedding data has been computed",
+        )
+        parser.add_argument(
             "--graph_mode", type=str, default=None,
             help="Whether to run evaluation in 'directed' or 'undirected' mode. Run both if not specified",
         )
