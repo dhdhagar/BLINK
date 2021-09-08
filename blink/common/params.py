@@ -255,7 +255,7 @@ class BlinkParser(argparse.ArgumentParser):
             help="Which type of layers to optimize in BERT",
         )
         parser.add_argument(
-            "--shuffle", type=bool, default=False, 
+            "--shuffle", type=bool, default=True, 
             help="Whether to shuffle train data",
         )
         # Cluster-linking arguments

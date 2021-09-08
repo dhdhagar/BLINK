@@ -186,7 +186,7 @@ def create_mst_dataloader(
     if max_n:
         gold_coref_clusters = gold_coref_clusters[:max_n]
 
-    for c in tqdm(gold_coref_clusters):
+    for c in tqdm(gold_coref_clusters): # for every gold cluster
         if len(c) < 2:
             continue
         cluster_input_chunks = []
@@ -197,7 +197,7 @@ def create_mst_dataloader(
             assert sorted(pos_cand_uids[i].tolist()) == pos_cand_uids[i].tolist()
             if len(ex_pos_cands.shape) == 1:
                 ex_pos_cands = ex_pos_cands.unsqueeze(0)
-            for j in range(ex_pos_cands.shape[0]):
+            for j in range(ex_pos_cands.shape[0]): # for each coreferent mention
                 candidate_bundle = ex_pos_cands[j].unsqueeze(0)
                 k = 0
                 while candidate_bundle.shape[0] < example_bundle_size:
@@ -206,12 +206,12 @@ def create_mst_dataloader(
                         k += 1
                         continue
                     candidate_bundle = torch.cat(
-                        (candidate_bundle, knn_cands[i][k].unsqueeze(0))
+                        (candidate_bundle, knn_cands[i][k].unsqueeze(0)) # Add negatives to the bundle
                     )
                     k += 1
 
                 cluster_input_chunks.append(
-                    modify(
+                    modify( # Modify with concatenated mention-entity pairs for every candidate in the bundle
                         contexts[i].unsqueeze(0),
                         candidate_bundle.unsqueeze(0),
                         params["max_seq_length"]
@@ -381,7 +381,7 @@ def train_one_epoch_mst(
                 context_bundles.append(bundle.unsqueeze(0))
             context_input = torch.cat(context_bundles)
 
-        label_input = torch.zeros((context_input.shape[0],), dtype=torch.long)
+        label_input = torch.zeros((context_input.shape[0],), dtype=torch.long) # DA: Where is the positive edge being set?
         tensor_data = TensorDataset(context_input, label_input)
         sampler = RandomSampler(tensor_data)
         sub_dataloader = DataLoader(
