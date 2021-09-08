@@ -260,8 +260,9 @@ def main(params):
     test_dictionary_pkl_path = os.path.join(pickle_src_path, 'test_dictionary.pickle')
     test_tensor_data_pkl_path = os.path.join(pickle_src_path, 'test_tensor_data.pickle')
     test_mention_data_pkl_path = os.path.join(pickle_src_path, 'test_mention_data.pickle')
-    train_tensor_data_pkl_path = os.path.join(pickle_src_path, 'train_tensor_data.pickle')
-    train_mention_data_pkl_path = os.path.join(pickle_src_path, 'train_mention_data.pickle')
+    if params['transductive']:
+        train_tensor_data_pkl_path = os.path.join(pickle_src_path, 'train_tensor_data.pickle')
+        train_mention_data_pkl_path = os.path.join(pickle_src_path, 'train_mention_data.pickle')
     if os.path.isfile(test_dictionary_pkl_path):
         print("Loading stored processed entity dictionary...")
         with open(test_dictionary_pkl_path, 'rb') as read_handle:
