@@ -163,8 +163,8 @@ class CrossEncoderRanker(torch.nn.Module):
 
         # init model
         self.build_model()
-        if params["path_to_cross_model"] is not None:
-            self.load_model(params["path_to_cross_model"])
+        if params["path_to_model"] is not None:
+            self.load_model(params["path_to_model"])
 
         self.model = self.model.to(self.device)
         self.data_parallel = params.get("data_parallel")
