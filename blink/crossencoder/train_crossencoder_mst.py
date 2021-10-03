@@ -21,7 +21,7 @@ from tqdm import tqdm, trange
 from scipy.sparse.csgraph import minimum_spanning_tree
 from scipy.sparse import csr_matrix
 
-from blink.biencoder.special_partition.special_partition import cluster_linking_partition
+from special_partition.special_partition import cluster_linking_partition
 import blink.biencoder.data_process_mult as data_process
 import blink.biencoder.eval_cluster_linking as eval_cluster_linking
 import blink.candidate_ranking.utils as utils
