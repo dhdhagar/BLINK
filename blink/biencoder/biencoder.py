@@ -6,24 +6,16 @@
 # LICENSE file in the root directory of this source tree.
 #
 import os
-import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-from tqdm import tqdm
 
-from pytorch_transformers.modeling_bert import (
-    BertPreTrainedModel,
-    BertConfig,
-    BertModel,
-)
+from pytorch_transformers.modeling_bert import BertModel
 
 from pytorch_transformers.tokenization_bert import BertTokenizer
 
 from blink.common.ranker_base import BertEncoder, get_model_obj
 from blink.common.optimizer import get_bert_optimizer
 
-from collections import OrderedDict
 from IPython import embed
 
 def load_biencoder(params):
@@ -95,7 +87,8 @@ class BiEncoderRanker(torch.nn.Module):
         
         # init model
         self.build_model()
-        model_path = params.get("path_to_model", None) # Path to pytorch_model.bin for the biencoder model (not the pretrained bert model)
+        # Path to pytorch_model.bin for the biencoder model (not the pre-trained BERT model)
+        model_path = params.get("path_to_biencoder_model", params.get("path_to_model", None))
         if model_path is not None:
             self.load_model(model_path)
         self.model = self.model.to(self.device)

@@ -127,6 +127,13 @@ class BlinkParser(argparse.ArgumentParser):
             help="The full path to the model to load.",
         )
         parser.add_argument(
+            "--path_to_biencoder_model",
+            default=None,
+            type=str,
+            required=False,
+            help="The full path to the bi-encoder model to load for cross-encoder candidate generation.",
+        )
+        parser.add_argument(
             "--bert_model",
             default="bert-base-uncased",
             type=str,
@@ -143,7 +150,7 @@ class BlinkParser(argparse.ArgumentParser):
         )
         parser.add_argument("--context_key", default="context", type=str)
         parser.add_argument(
-            "--out_dim", type=int, default=1, help="Output dimention of bi-encoders.",
+            "--out_dim", type=int, default=1, help="Output dimension of bi-encoders.",
         )
         parser.add_argument(
             "--add_linear",
@@ -380,7 +387,7 @@ class BlinkParser(argparse.ArgumentParser):
         )
         parser.add_argument(
             "--exact_knn", type=int, default=None,
-            help="Exact value of the knn graph to run the experient against",
+            help="Exact value of the knn graph to run the experiment against",
         )
         parser.add_argument(
             "--embed_data_path",
