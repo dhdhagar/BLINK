@@ -966,6 +966,7 @@ def main(params):
 if __name__ == "__main__":
     parser = BlinkParser(add_model_args=True)
     parser.add_training_args()
+    parser.add_joint_train_args()
     args = parser.parse_args()
     print(args)
     main(args.__dict__)
