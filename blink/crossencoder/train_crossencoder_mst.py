@@ -263,7 +263,7 @@ def get_biencoder_nns(bi_reranker, pickle_src_path, entity_dictionary, entity_di
             logger.info("Biencoder: Finding nearest mentions per gold entity cluster...")
             # To restrict the number of cross-encoder scoring required to compute MST
             sorted_cluster_mens = {}
-            _, sorted_cluster_mens_np = train_men_index.search(np.array(list(train_gold_clusters.keys())),
+            _, sorted_cluster_mens_np = train_men_index.search(np.array(list(train_gold_clusters.keys())).reshape(-1, 1),
                                                                len(train_men_embeddings))
             for i, cluster_ent_idx in enumerate(train_gold_clusters):
                 sorted_cluster_mens[cluster_ent_idx] = sorted_cluster_mens_np[i][np.isin(sorted_cluster_mens_np[i],
