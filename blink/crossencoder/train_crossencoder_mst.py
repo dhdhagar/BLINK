@@ -61,6 +61,20 @@ def concat_for_crossencoder(context_inputs, candidate_inputs, max_seq_length):
     return torch.LongTensor(new_input)
 
 
+def score_in_batches(cross_reranker, max_context_length, cross_inputs, batch_size=128):
+    scores = None
+    sampler = SequentialSampler(cross_inputs)
+    dataloader = DataLoader(
+        cross_inputs, sampler=sampler, batch_size=batch_size
+    )
+    for step, batch in enumerate(tqdm(dataloader, desc="Processing in batches")):
+        batch_scores = cross_reranker.score_candidate(batch.cuda(),
+                                                      max_context_length,
+                                                      is_context_encoder=True)
+        scores = batch_scores if scores is None else torch.cat((scores, batch_scores), dim=0)
+    return scores
+
+
 def evaluate(cross_reranker,
              max_context_length,
              entity_dictionary,
@@ -81,7 +95,7 @@ def evaluate(cross_reranker,
     n_mentions = len(valid_processed_data)
 
     bi_men_idxs = biencoder_valid_idxs['men_nns'][:k_biencoder]
-    bi_ent_idxs = biencoder_valid_idxs['ent_nns'][:k_biencoder]
+    bi_ent_idxs = biencoder_valid_idxs['dict_nns'][:k_biencoder]
 
     joint_graphs = {}
     for k in ([0] + [2 ** i for i in range(int(math.log(max_k, 2)) + 1)]):
@@ -97,9 +111,10 @@ def evaluate(cross_reranker,
     cross_reranker.model.eval()
     with torch.no_grad():
         logger.info('Eval: Scoring mention-mention edges using cross-encoder...')
-        cross_men_scores = cross_reranker.score_candidate(valid_men_inputs.cuda(),
-                                                          max_context_length,
-                                                          is_context_encoder=True)
+        cross_men_scores = score_in_batches(cross_reranker, max_context_length, valid_men_inputs, batch_size=64)
+        # cross_men_scores = cross_reranker.score_candidate(valid_men_inputs.cuda(),
+        #                                                   max_context_length,
+        #                                                   is_context_encoder=True)
         cross_men_topk_idxs = torch.argsort(cross_men_scores, dim=1, descending=True)[:, :max_k]
         cross_men_topk_scores = cross_men_scores[cross_men_topk_idxs]
         logger.info('Eval: Scoring done')
@@ -260,21 +275,21 @@ def get_biencoder_nns(bi_reranker, pickle_src_path, entity_dictionary, entity_di
                         bi_men_nns[idx] = men_nns_idxs[i][men_nns_idxs[i] != idx][:k_men_nns]
             logger.info("Biencoder: Search finished")
 
-            logger.info("Biencoder: Finding nearest mentions per gold entity cluster...")
-            # To restrict the number of cross-encoder scoring required to compute MST
-            sorted_cluster_mens = {}
-            _, sorted_cluster_mens_np = train_men_index.search(np.array(list(train_gold_clusters.keys())).reshape(-1, 1),
-                                                               len(train_men_embeddings))
-            for i, cluster_ent_idx in enumerate(train_gold_clusters):
-                sorted_cluster_mens[cluster_ent_idx] = sorted_cluster_mens_np[i][np.isin(sorted_cluster_mens_np[i],
-                                                                                         train_gold_clusters[cluster_ent_idx])]
-            logger.info("Biencoder: Search finished...")
+            # logger.info("Biencoder: Finding nearest mentions per gold entity cluster...")
+            # # To restrict the number of cross-encoder scoring required to compute MST
+            # sorted_cluster_mens = {}
+            # _, sorted_cluster_mens_np = train_men_index.search(np.array(list(train_gold_clusters.keys())).reshape(-1, 1),
+            #                                                    len(train_men_embeddings))
+            # for i, cluster_ent_idx in enumerate(train_gold_clusters):
+            #     sorted_cluster_mens[cluster_ent_idx] = sorted_cluster_mens_np[i][np.isin(sorted_cluster_mens_np[i],
+            #                                                                              train_gold_clusters[cluster_ent_idx])]
+            # logger.info("Biencoder: Search finished...")
 
             logger.info("Biencoder: Saving sorted biencoder train indices...")
             biencoder_train_idxs = {
-                'dict_nns': bi_dict_nns,  # Nearest negative entity idxs
-                'men_nns': bi_men_nns,  # Nearest negative mention idxs
-                'nn_mens_per_entity': sorted_cluster_mens  # Mention idxs nearest to each gold cluster entity
+                'dict_nns': bi_dict_nns.astype(int),  # Nearest negative entity idxs
+                'men_nns': bi_men_nns.astype(int),  # Nearest negative mention idxs
+                # 'nn_mens_per_entity': sorted_cluster_mens  # Mention idxs nearest to each gold cluster entity
             }
             with open(biencoder_train_idxs_pkl_path, 'wb') as write_handle:
                 pickle.dump(biencoder_train_idxs, write_handle,
@@ -305,6 +320,7 @@ def get_biencoder_nns(bi_reranker, pickle_src_path, entity_dictionary, entity_di
                                                                            batch_size=params['embed_batch_size'])
             valid_men_embeddings, valid_men_index = data_process.embed_and_index(bi_reranker, valid_men_vecs,
                 encoder_type="context", n_gpu=n_gpu, force_exact_search=True, batch_size=params['embed_batch_size'])
+        valid_men_embeddings = valid_men_embeddings.numpy()
         logger.info('Biencoder: Embedding and indexing finished')
 
         logger.info("Biencoder: Finding nearest mentions and entities for each mention...")
@@ -334,8 +350,8 @@ def get_biencoder_nns(bi_reranker, pickle_src_path, entity_dictionary, entity_di
         logger.info("Biencoder: Search finished")
 
         biencoder_valid_idxs = {
-            'dict_nns': bi_dict_nns,  # Nearest entity idxs
-            'men_nns': bi_men_nns  # Nearest mention idxs
+            'dict_nns': bi_dict_nns.astype(int),  # Nearest entity idxs
+            'men_nns': bi_men_nns.astype(int)  # Nearest mention idxs
         }
 
         logger.info("Biencoder: Saving sorted biencoder valid indices...")
@@ -619,10 +635,10 @@ def build_cross_concat_input(biencoder_idxs,
                              k_biencoder):
     men_men_inputs = []
     men_ent_inputs = []
-    for mention_idx in range(len(men_vecs)):
+    for mention_idx in tqdm(range(len(men_vecs))):
         # Get nearest biencoder mentions and entities
         bi_men_idxs = biencoder_idxs['men_nns'][mention_idx][:k_biencoder]
-        bi_ent_idxs = biencoder_idxs['ent_nns'][mention_idx][:k_biencoder]
+        bi_ent_idxs = biencoder_idxs['dict_nns'][mention_idx][:k_biencoder]
         bi_men_inputs = torch.unsqueeze(torch.tensor(list(map(lambda x: men_vecs[x].numpy(), bi_men_idxs))), dim=0)
         bi_ent_inputs = torch.unsqueeze(torch.tensor(list(map(lambda x: entity_dict_vecs[x].numpy(), bi_ent_idxs))), dim=0)
         # Concatenate for cross-encoder
@@ -634,8 +650,8 @@ def build_cross_concat_input(biencoder_idxs,
                                                    max_seq_length)  # Shape: 1 x knn x 2D
         men_men_inputs.append(cross_men_inputs)
         men_ent_inputs.append(cross_ent_inputs)
-    men_men_inputs = torch.tensor(men_men_inputs)
-    men_ent_inputs = torch.tensor(men_ent_inputs)
+    men_men_inputs = torch.cat(men_men_inputs)
+    men_ent_inputs = torch.cat(men_ent_inputs)
     return men_men_inputs, men_ent_inputs
 
 
@@ -796,18 +812,22 @@ def main(params):
                                                                    n_gpu=n_gpu,
                                                                    params=params)
     # Compute and store the concatenated cross-encoder inputs for validation
+    logger.info('Computing the concatenated cross-encoder inputs for validation...')
     valid_men_concat_inputs, valid_ent_concat_inputs = build_cross_concat_input(biencoder_valid_idxs,
                                                                                 valid_men_vecs,
                                                                                 entity_dict_vecs,
                                                                                 max_seq_length,
                                                                                 bi_knn)
-
+    logger.info('Done')
     # Compute and store the concatenated cross-encoder inputs for the negatives in training
+    logger.info('Computing the concatenated cross-encoder negative inputs for training...')
     train_men_concat_inputs, train_ent_concat_inputs = build_cross_concat_input(biencoder_train_idxs,
                                                                                 train_men_vecs,
                                                                                 entity_dict_vecs,
                                                                                 max_seq_length,
                                                                                 bi_knn)
+    logger.info('Done')
+
     # Evaluate cross-encoder before training
     evaluate(cross_reranker,
              max_context_length,
