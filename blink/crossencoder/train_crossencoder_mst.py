@@ -118,7 +118,7 @@ def evaluate(cross_reranker,
         #                                                   max_context_length,
         #                                                   is_context_encoder=True)
         cross_men_topk_idxs = torch.argsort(cross_men_scores, dim=1, descending=True)[:, :max_k]
-        cross_men_topk_scores = cross_men_scores[cross_men_topk_idxs]
+        cross_men_topk_scores = cross_men_scores[cross_men_topk_idxs].cpu()
         cross_men_topk_idxs = cross_men_topk_idxs.cpu()
         logger.info('Eval: Scoring done')
 
@@ -129,7 +129,7 @@ def evaluate(cross_reranker,
         #                                                   max_context_length,
         #                                                   is_context_encoder=False)
         cross_ent_top1_idx = torch.argsort(cross_ent_scores, dim=1, descending=True)[:, 0]
-        cross_ent_top1_score = cross_ent_scores[cross_ent_top1_idx]
+        cross_ent_top1_score = cross_ent_scores[cross_ent_top1_idx].cpu()
         cross_ent_top1_idx = cross_ent_top1_idx.cpu()
         logger.info('Eval: Scoring done')
 
