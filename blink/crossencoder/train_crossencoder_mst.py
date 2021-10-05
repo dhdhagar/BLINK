@@ -95,8 +95,8 @@ def evaluate(cross_reranker,
     n_entities = len(entity_dictionary)
     n_mentions = len(valid_processed_data)
 
-    bi_men_idxs = biencoder_valid_idxs['men_nns'][:k_biencoder]
-    bi_ent_idxs = biencoder_valid_idxs['dict_nns'][:k_biencoder]
+    bi_men_idxs = biencoder_valid_idxs['men_nns'][:, k_biencoder]
+    bi_ent_idxs = biencoder_valid_idxs['dict_nns'][:, k_biencoder]
 
     joint_graphs = {}
     for k in ([0] + [2 ** i for i in range(int(math.log(max_k, 2)) + 1)]):
@@ -129,10 +129,10 @@ def evaluate(cross_reranker,
 
     for men_idx in tqdm(range(len(valid_processed_data)), total=len(valid_processed_data), desc="Eval: Building graphs"):
         # Get nearest entity
-        m_e_idx = bi_ent_idxs[cross_ent_top1_idx[men_idx]]
+        m_e_idx = bi_ent_idxs[men_idx, cross_ent_top1_idx[men_idx]]
         m_e_score = cross_ent_top1_score[men_idx]
         # Get nearest mentions
-        m_m_idxs = bi_men_idxs[cross_men_topk_idxs[men_idx]] + n_entities  # Mentions added at an offset of maximum entities
+        m_m_idxs = bi_men_idxs[men_idx, cross_men_topk_idxs[men_idx]] + n_entities  # Mentions added at an offset of maximum entities
         m_m_scores = cross_men_topk_scores[men_idx]
         # Add edges to the graphs
         for k in joint_graphs:
