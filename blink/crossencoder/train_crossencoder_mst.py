@@ -114,23 +114,17 @@ def evaluate(cross_reranker,
         logger.info('Eval: Scoring mention-mention edges using cross-encoder...')
         cross_men_scores = score_in_batches(cross_reranker, max_context_length, valid_men_inputs,
                                             is_context_encoder=True, batch_size=64)
-        # cross_men_scores = cross_reranker.score_candidate(valid_men_inputs.cuda(),
-        #                                                   max_context_length,
-        #                                                   is_context_encoder=True)
-        cross_men_topk_idxs = torch.argsort(cross_men_scores, dim=1, descending=True)[:, :max_k]
-        cross_men_topk_scores = cross_men_scores[cross_men_topk_idxs].cpu()
-        cross_men_topk_idxs = cross_men_topk_idxs.cpu()
+        cross_men_topk_scores, cross_men_topk_idxs = torch.sort(cross_men_scores, dim=1, descending=True)
+        cross_men_topk_idxs = cross_men_topk_idxs.cpu()[:, :max_k]
+        cross_men_topk_scores = cross_men_topk_scores.cpu()[:, :max_k]
         logger.info('Eval: Scoring done')
 
         logger.info('Eval: Scoring mention-entity edges using cross-encoder...')
         cross_ent_scores = score_in_batches(cross_reranker, max_context_length, valid_ent_inputs,
                                             is_context_encoder=False, batch_size=64)
-        # cross_ent_scores = cross_reranker.score_candidate(valid_ent_inputs.cuda(),
-        #                                                   max_context_length,
-        #                                                   is_context_encoder=False)
-        cross_ent_top1_idx = torch.argsort(cross_ent_scores, dim=1, descending=True)[:, 0]
-        cross_ent_top1_score = cross_ent_scores[cross_ent_top1_idx].cpu()
-        cross_ent_top1_idx = cross_ent_top1_idx.cpu()
+        cross_ent_top1_score, cross_ent_top1_idx = torch.sort(cross_ent_scores, dim=1, descending=True)
+        cross_ent_top1_idx = cross_ent_top1_idx.cpu()[:, 0]
+        cross_ent_top1_score = cross_ent_top1_score.cpu()[:, 0]
         logger.info('Eval: Scoring done')
 
     for men_idx in tqdm(range(len(valid_processed_data)), total=len(valid_processed_data), desc="Eval: Building graphs"):
@@ -172,7 +166,7 @@ def evaluate(cross_reranker,
             logger.info(f"\nEval: Graph (k={k}, mode={mode}):")
             # Partition graph based on cluster-linking constraints
             partitioned_graph, clusters = eval_cluster_linking.partition_graph(
-                joint_graphs[k], n_entities, directed=mode=='directed', return_clusters=True)
+                joint_graphs[k], n_entities, directed=(mode == 'directed'), return_clusters=True)
             # Infer predictions from clusters
             result = eval_cluster_linking.analyzeClusters(clusters, entity_dictionary, valid_processed_data, k)
             acc = float(result['accuracy'].split(' ')[0])
@@ -562,8 +556,6 @@ def get_gold_arbo_links(cross_reranker,
                                                is_context_encoder=False, batch_size=64)
                 to_men_data = score_in_batches(cross_reranker, max_context_length, to_men_input,
                                                is_context_encoder=True, batch_size=64)
-                # to_ent_data = cross_reranker.score_candidate(to_ent_input, max_context_length, is_context_encoder=False)
-                # to_men_data = cross_reranker.score_candidate(to_men_input, max_context_length, is_context_encoder=True)
                 for i in range(len(cluster_mens)):
                     from_node = n_entities + cluster_mens[i]
                     to_node = cluster_ent
@@ -627,8 +619,6 @@ def construct_train_batch(cross_reranker,
         pos_label_input = concat_for_crossencoder(train_men_vecs[mention_idx:mention_idx + 1],
                                                   to_input,
                                                   max_seq_length)  # Shape: 1 x 1 x 2D
-        # pos_score = cross_reranker.score_candidate(pos_label_input.cuda(), max_context_length,
-        #                                            is_context_encoder=is_context_encoder)
         pos_score = score_in_batches(cross_reranker, max_context_length, pos_label_input,
                                      is_context_encoder=is_context_encoder, batch_size=64)
         batch_positive_scores.append(pos_score)
@@ -677,23 +667,23 @@ def get_train_neg_cross_inputs(cross_reranker,
     cross_reranker.model.eval()
     with torch.no_grad():
         logger.info('Scoring mention-mention negative edges using cross-encoder...')
-        # neg_men_scores = cross_reranker.score_candidate(train_men_concat_inputs.cuda(),
-        #                                                 max_context_length,
-        #                                                 is_context_encoder=True)
         neg_men_scores = score_in_batches(cross_reranker, max_context_length, train_men_concat_inputs,
                                           is_context_encoder=True, batch_size=64)
         neg_men_topk_idxs = torch.argsort(neg_men_scores, dim=1, descending=True)[:, :n_knn_men_negs]
-        neg_men_topk_inputs = train_men_concat_inputs[neg_men_topk_idxs]
+        stacked = []
+        for r in range(neg_men_topk_idxs.size(0)):
+            stacked.append(train_men_concat_inputs[r][neg_men_topk_idxs[r]])
+        neg_men_topk_inputs = torch.stack(stacked)
         logger.info('Eval: Scoring done')
 
         logger.info('Scoring mention-mention negative edges using cross-encoder...')
-        # neg_ent_scores = cross_reranker.score_candidate(train_ent_concat_inputs.cuda(),
-        #                                                 max_context_length,
-        #                                                 is_context_encoder=False)
         neg_ent_scores = score_in_batches(cross_reranker, max_context_length, train_ent_concat_inputs,
                                           is_context_encoder=False, batch_size=64)
         neg_ent_topk_idxs = torch.argsort(neg_ent_scores, dim=1, descending=True)[:, :n_knn_ent_negs]
-        neg_ent_topk_inputs = train_ent_concat_inputs[neg_ent_topk_idxs]
+        stacked = []
+        for r in range(neg_ent_topk_idxs.size(0)):
+            stacked.append(train_ent_concat_inputs[r][neg_ent_topk_idxs[r]])
+        neg_ent_topk_inputs = torch.stack(stacked)
         logger.info('Eval: Scoring done')
     return neg_men_topk_inputs, neg_ent_topk_inputs
 
