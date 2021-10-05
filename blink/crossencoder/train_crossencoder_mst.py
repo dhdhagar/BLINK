@@ -564,7 +564,7 @@ def get_gold_arbo_links(cross_reranker,
                     # Add mention-entity link
                     rows.append(from_node)
                     cols.append(to_node)
-                    data.append(-1 * to_ent_data[i, 0])  # Negatives needed for SciPy's MST computation
+                    data.append(to_ent_data[i, 0])
                     # Add mention-mention links
                     for j in range(len(cluster_mens)):
                         # Skip diagonal elements from to_men_data because they are scores of elements against themselves
@@ -573,13 +573,11 @@ def get_gold_arbo_links(cross_reranker,
                         to_node = n_entities + cluster_mens[j]
                         rows.append(from_node)
                         cols.append(to_node)
-                        data.append(-1 * to_men_data[i, j])  # Negatives needed for SciPy's MST computation
-                # Find MST with entity constraint
-                csr = csr_matrix((data, (rows, cols)), shape=shape)
-                mst = minimum_spanning_tree(csr).tocoo()
-                rows, cols, data = cluster_linking_partition(mst.row,
-                                                             mst.col,
-                                                             -mst.data,
+                        data.append(to_men_data[i, j])
+                # Partition graph with entity constraint
+                rows, cols, data = cluster_linking_partition(np.array(rows),
+                                                             np.array(cols),
+                                                             np.array(data),
                                                              n_entities,
                                                              directed=True,
                                                              silent=True)
