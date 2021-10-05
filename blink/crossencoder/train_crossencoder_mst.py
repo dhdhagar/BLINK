@@ -95,8 +95,8 @@ def evaluate(cross_reranker,
     n_entities = len(entity_dictionary)
     n_mentions = len(valid_processed_data)
 
-    bi_men_idxs = biencoder_valid_idxs['men_nns'][:, k_biencoder]
-    bi_ent_idxs = biencoder_valid_idxs['dict_nns'][:, k_biencoder]
+    bi_men_idxs = biencoder_valid_idxs['men_nns'][:, :k_biencoder]
+    bi_ent_idxs = biencoder_valid_idxs['dict_nns'][:, :k_biencoder]
 
     joint_graphs = {}
     for k in ([0] + [2 ** i for i in range(int(math.log(max_k, 2)) + 1)]):
@@ -703,7 +703,7 @@ def main(params):
     # Bi-encoder model
     bi_reranker = BiEncoderRanker(params)
     bi_tokenizer = bi_reranker.tokenizer
-    bi_knn = 64  # Number of biencoder nearest-neighbors to fetch for cross-encoder scoring
+    bi_knn = params["bi_knn"]  # Number of biencoder nearest-neighbors to fetch for cross-encoder scoring (default: 64)
 
     # Cross-encoder model
     cross_reranker = CrossEncoderRanker(params)
