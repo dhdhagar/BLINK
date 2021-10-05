@@ -539,6 +539,10 @@ def get_gold_arbo_links(cross_reranker,
             # Assuming that there is only 1 gold label
             cluster_ent = train_processed_data[mention_idx]['label_idxs'][0]
             if mention_idx not in gold_links:
+                # Link to the entity if cluster is singleton
+                if len(cluster_mens) == 1:
+                    gold_links[mention_idx] = cluster_ent
+                    continue
                 # Run MST on mention clusters of all gold entities of current query mention to find positive edge
                 rows, cols, data, shape = [], [], [], (n_entities + n_mentions, n_entities + n_mentions)
                 # TODO: Reduce the number of mentions (maybe based on bi-encoder k-nn mentions to the entity)?
@@ -547,16 +551,16 @@ def get_gold_arbo_links(cross_reranker,
                                                        entity_dict_vecs[cluster_ent].expand(len(cluster_mens), 1,
                                                                                             entity_dict_vecs.size(1)),
                                                        max_seq_length)  # Shape: N x 1 x 2D
+                to_ent_data = score_in_batches(cross_reranker, max_context_length, to_ent_input,
+                                               is_context_encoder=False, batch_size=64)
+                to_ent_data = to_ent_data.cpu()
                 to_men_input = concat_for_crossencoder(train_men_vecs[cluster_mens],
                                                        train_men_vecs[cluster_mens].expand(len(cluster_mens),
                                                                                            len(cluster_mens),
                                                                                            train_men_vecs.size(1)),
                                                        max_seq_length)  # Shape: N x N x 2D
-                to_ent_data = score_in_batches(cross_reranker, max_context_length, to_ent_input,
-                                               is_context_encoder=False, batch_size=64)
-                to_ent_data = to_ent_data.cpu()
                 to_men_data = score_in_batches(cross_reranker, max_context_length, to_men_input,
-                                               is_context_encoder=True, batch_size=64)
+                                               is_context_encoder=True, batch_size=8)
                 to_men_data = to_men_data.cpu()
                 for i in range(len(cluster_mens)):
                     from_node = n_entities + cluster_mens[i]
@@ -832,17 +836,18 @@ def main(params):
                                                                                 bi_knn)
     logger.info('Done')
 
-    # Evaluate cross-encoder before training
-    evaluate(cross_reranker,
-             max_context_length,
-             entity_dictionary,
-             valid_processed_data,
-             biencoder_valid_idxs,
-             valid_men_concat_inputs,
-             valid_ent_concat_inputs,
-             logger,
-             max_k=8,
-             k_biencoder=64)
+    if not params["skip_initial_eval"]:
+        # Evaluate cross-encoder before training
+        evaluate(cross_reranker,
+                 max_context_length,
+                 entity_dictionary,
+                 valid_processed_data,
+                 biencoder_valid_idxs,
+                 valid_men_concat_inputs,
+                 valid_ent_concat_inputs,
+                 logger,
+                 max_k=8,
+                 k_biencoder=64)
 
     # Start training
     time_start = time.time()
