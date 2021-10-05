@@ -298,6 +298,10 @@ class BlinkParser(argparse.ArgumentParser):
             "--bi_knn", type=int, default=64,
             help="Number of biencoder nearest-neighbors to fetch for cross-encoder scoring",
         )
+        parser.add_argument(
+            "--skip_initial_eval", action="store_true",
+            help="Skip model evaluation before the start of training",
+        )
 
     def add_eval_args(self, args=None):
         """
