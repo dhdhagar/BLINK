@@ -554,8 +554,10 @@ def get_gold_arbo_links(cross_reranker,
                                                        max_seq_length)  # Shape: N x N x 2D
                 to_ent_data = score_in_batches(cross_reranker, max_context_length, to_ent_input,
                                                is_context_encoder=False, batch_size=64)
+                to_ent_data = to_ent_data.cpu()
                 to_men_data = score_in_batches(cross_reranker, max_context_length, to_men_input,
                                                is_context_encoder=True, batch_size=64)
+                to_men_data = to_men_data.cpu()
                 for i in range(len(cluster_mens)):
                     from_node = n_entities + cluster_mens[i]
                     to_node = cluster_ent
@@ -569,10 +571,9 @@ def get_gold_arbo_links(cross_reranker,
                         if i == j:
                             continue
                         to_node = n_entities + cluster_mens[j]
-                        score = to_men_data[i, j]
                         rows.append(from_node)
                         cols.append(to_node)
-                        data.append(-1 * score)  # Negatives needed for SciPy's MST computation
+                        data.append(-1 * to_men_data[i, j])  # Negatives needed for SciPy's MST computation
                 # Find MST with entity constraint
                 csr = csr_matrix((data, (rows, cols)), shape=shape)
                 mst = minimum_spanning_tree(csr).tocoo()
