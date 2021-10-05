@@ -539,14 +539,14 @@ def get_gold_arbo_links(cross_reranker,
             # Assuming that there is only 1 gold label
             cluster_ent = train_processed_data[mention_idx]['label_idxs'][0]
             if mention_idx not in gold_links:
-                # Link to the entity if cluster is singleton
+                cluster_mens = train_gold_clusters[cluster_ent]
+                # Simply link to the entity if cluster is singleton
                 if len(cluster_mens) == 1:
                     gold_links[mention_idx] = cluster_ent
                     continue
                 # Run MST on mention clusters of all gold entities of current query mention to find positive edge
                 rows, cols, data, shape = [], [], [], (n_entities + n_mentions, n_entities + n_mentions)
                 # TODO: Reduce the number of mentions (maybe based on bi-encoder k-nn mentions to the entity)?
-                cluster_mens = train_gold_clusters[cluster_ent]
                 to_ent_input = concat_for_crossencoder(train_men_vecs[cluster_mens],
                                                        entity_dict_vecs[cluster_ent].expand(len(cluster_mens), 1,
                                                                                             entity_dict_vecs.size(1)),
