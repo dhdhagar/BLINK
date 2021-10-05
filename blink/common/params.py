@@ -294,6 +294,10 @@ class BlinkParser(argparse.ArgumentParser):
             "--drop_entities", action="store_true",
             help="Drop entities at random before training for entity discovery experiments",
         )
+        parser.add_argument(
+            "--bi_knn", type=int, default=64,
+            help="Number of biencoder nearest-neighbors to fetch for cross-encoder scoring",
+        )
 
     def add_eval_args(self, args=None):
         """
