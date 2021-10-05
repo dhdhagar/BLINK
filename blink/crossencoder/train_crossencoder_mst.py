@@ -551,16 +551,22 @@ def get_gold_arbo_links(cross_reranker,
                                                        entity_dict_vecs[cluster_ent].expand(len(cluster_mens), 1,
                                                                                             entity_dict_vecs.size(1)),
                                                        max_seq_length)  # Shape: N x 1 x 2D
-                to_ent_data = score_in_batches(cross_reranker, max_context_length, to_ent_input,
-                                               is_context_encoder=False, batch_size=64)
+                try:
+                    to_ent_data = score_in_batches(cross_reranker, max_context_length, to_ent_input,
+                                                   is_context_encoder=False, batch_size=8)
+                except:
+                    raise ValueError(f"Probably a batch size error. The current cluster size was {len(cluster_mens)}")
                 to_ent_data = to_ent_data.cpu()
                 to_men_input = concat_for_crossencoder(train_men_vecs[cluster_mens],
                                                        train_men_vecs[cluster_mens].expand(len(cluster_mens),
                                                                                            len(cluster_mens),
                                                                                            train_men_vecs.size(1)),
                                                        max_seq_length)  # Shape: N x N x 2D
-                to_men_data = score_in_batches(cross_reranker, max_context_length, to_men_input,
-                                               is_context_encoder=True, batch_size=8)
+                try:
+                    to_men_data = score_in_batches(cross_reranker, max_context_length, to_men_input,
+                                                   is_context_encoder=True, batch_size=8)
+                except:
+                    raise ValueError(f"Probably a batch size error. The current cluster size was {len(cluster_mens)}")
                 to_men_data = to_men_data.cpu()
                 for i in range(len(cluster_mens)):
                     from_node = n_entities + cluster_mens[i]
@@ -879,6 +885,7 @@ def main(params):
         torch.cuda.empty_cache()
 
         # Compute arborescences per gold cluster and store the ground-truth positive edges for each mention
+        logger.info("Computing gold arborescence links for positive training labels")
         gold_links = get_gold_arbo_links(cross_reranker,
                                          max_context_length,
                                          entity_dict_vecs,
@@ -886,6 +893,7 @@ def main(params):
                                          train_processed_data,
                                          train_gold_clusters,
                                          max_seq_length)
+        logger.info("Done")
 
         # Score nearest biencoder negatives using cross-encoder and store nearest k for every epoch
         neg_men_topk_inputs, neg_ent_topk_inputs = get_train_neg_cross_inputs(cross_reranker,
