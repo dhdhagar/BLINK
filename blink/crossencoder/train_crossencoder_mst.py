@@ -256,7 +256,7 @@ def get_biencoder_nns(bi_reranker, pickle_src_path, entity_dictionary, entity_di
                 for i in range(len(bi_dict_nns_np)):
                     gold_idx = train_processed_data[i]['label_idxs'][0]
                     bi_dict_nns[i] = bi_dict_nns_np[i][bi_dict_nns_np[i] != gold_idx][:k_dict_nns]
-                    men_neg_mask = not np.isin(bi_men_nns_np[i], train_gold_clusters[gold_idx])
+                    men_neg_mask = ~np.isin(bi_men_nns_np[i], train_gold_clusters[gold_idx])
                     bi_men_nns[i] = bi_men_nns_np[i][men_neg_mask][:k_men_nns]
                     men_gold_mask = (np.isin(bi_men_nns_np[i], train_gold_clusters[gold_idx])) & (bi_men_nns_np[i] != i)
                     gold_nns = bi_men_nns_np[i][men_gold_mask][:k_men_nns]
@@ -272,7 +272,7 @@ def get_biencoder_nns(bi_reranker, pickle_src_path, entity_dictionary, entity_di
                     for i, idx in enumerate(men_idxs_by_type[entity_type]):
                         gold_idx = train_processed_data[idx]['label_idxs'][0]
                         bi_dict_nns[idx] = dict_nns_idxs[i][dict_nns_idxs[i] != gold_idx][:k_dict_nns]
-                        men_neg_mask = not np.isin(men_nns_idxs[i], train_gold_clusters[gold_idx])
+                        men_neg_mask = ~np.isin(men_nns_idxs[i], train_gold_clusters[gold_idx])
                         bi_men_nns[idx] = men_nns_idxs[i][men_neg_mask][:k_men_nns]
                         men_gold_mask = (np.isin(men_nns_idxs[i], train_gold_clusters[gold_idx])) & (men_nns_idxs[i] != idx)
                         gold_nns = men_nns_idxs[i][men_gold_mask][:k_men_nns]
