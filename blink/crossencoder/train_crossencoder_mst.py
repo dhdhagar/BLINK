@@ -524,7 +524,6 @@ def get_gold_arbo_links(cross_reranker,
                         entity_dict_vecs,
                         train_men_vecs,
                         train_processed_data,
-                        train_gold_clusters,
                         gold_men_nns,
                         max_seq_length,
                         knn):
@@ -589,7 +588,7 @@ def get_gold_arbo_links(cross_reranker,
                                                              n_entities,
                                                              directed=True,
                                                              silent=True)
-                assert np.array_equal(rows - n_entities, train_gold_clusters[cluster_ent])
+                assert np.array_equal(rows - n_entities, cluster_mens)
                 for i in range(len(rows)):
                     men_idx = rows[i] - n_entities
                     if men_idx in gold_links:
@@ -898,7 +897,6 @@ def main(params):
                                          entity_dict_vecs,
                                          train_men_vecs,
                                          train_processed_data,
-                                         train_gold_clusters,
                                          biencoder_train_idxs['men_gold_nns'],
                                          max_seq_length,
                                          knn=32)
