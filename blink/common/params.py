@@ -268,7 +268,11 @@ class BlinkParser(argparse.ArgumentParser):
         # Cluster-linking arguments
         parser.add_argument(
             "--knn", type=int, default=10, 
-            help="Number of kNN (positive+negative) candidates to fetch per mention query during training",
+            help="Number of k-NN (positive+negative) candidates to fetch per mention query during training",
+        )
+        parser.add_argument(
+            "--knn_negs", type=int, default=8,
+            help="Number of k-NN negatives in each row of the training batch",
         )
         parser.add_argument(
             "--filter_unlabeled", action="store_true",
