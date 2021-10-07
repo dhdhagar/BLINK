@@ -783,7 +783,19 @@ def main(params):
     valid_men_vecs = valid_tensor_data[:][0]
 
     if params["only_evaluate"]:
-        _, biencoder_valid_idxs = get_biencoder_nns()
+        _, biencoder_valid_idxs = get_biencoder_nns(bi_reranker=bi_reranker,
+                                                    pickle_src_path=pickle_src_path,
+                                                    entity_dictionary=entity_dictionary,
+                                                    entity_dict_vecs=entity_dict_vecs,
+                                                    train_men_vecs=None,
+                                                    train_processed_data=None,
+                                                    train_gold_clusters=None,
+                                                    valid_men_vecs=valid_men_vecs,
+                                                    valid_processed_data=valid_processed_data,
+                                                    use_types=use_types,
+                                                    logger=logger,
+                                                    n_gpu=n_gpu,
+                                                    params=params)
         # Compute and store the concatenated cross-encoder inputs for validation
         valid_men_concat_inputs, valid_ent_concat_inputs = build_cross_concat_input(biencoder_valid_idxs,
                                                                                     valid_men_vecs,
@@ -887,6 +899,7 @@ def main(params):
                                          train_men_vecs,
                                          train_processed_data,
                                          train_gold_clusters,
+                                         biencoder_train_idxs['men_gold_nns'],
                                          max_seq_length,
                                          knn=32)
         logger.info("Done")
