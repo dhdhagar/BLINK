@@ -588,7 +588,7 @@ def get_gold_arbo_links(cross_reranker,
                                                              n_entities,
                                                              directed=True,
                                                              silent=True)
-                assert np.array_equal(rows - n_entities, cluster_mens)
+                assert np.array_equal(np.sort(rows - n_entities), np.sort(cluster_mens))
                 for i in range(len(rows)):
                     men_idx = rows[i] - n_entities
                     if men_idx in gold_links:
