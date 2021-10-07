@@ -18,8 +18,6 @@ import torch
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler)
 from pytorch_transformers.optimization import WarmupLinearSchedule
 from tqdm import tqdm, trange
-from scipy.sparse.csgraph import minimum_spanning_tree
-from scipy.sparse import csr_matrix
 
 from special_partition.special_partition import cluster_linking_partition
 import blink.biencoder.data_process_mult as data_process
@@ -37,13 +35,13 @@ def concat_for_crossencoder(context_inputs, candidate_inputs, max_seq_length):
     """
     Parameters
     ----------
-    context_inputs: ndarray(N,D)
-    candidate_inputs: ndarray(N,k,D)
+    context_inputs: N x D
+    candidate_inputs: N x k x D
     max_seq_length: int
 
     Returns
     -------
-    concat_input: ndarray(N,k,2D-1)
+    concat_input: N x k x 2D-1
     """
     new_input = []
     context_inputs = context_inputs.tolist()
@@ -61,18 +59,18 @@ def concat_for_crossencoder(context_inputs, candidate_inputs, max_seq_length):
     return torch.LongTensor(new_input)
 
 
-def score_in_batches(cross_reranker, max_context_length, cross_inputs, is_context_encoder, batch_size=128):
+def score_in_batches(cross_reranker, max_context_length, cross_inputs, is_context_encoder, batch_size=128, silent=False):
     scores = None
     sampler = SequentialSampler(cross_inputs)
     dataloader = DataLoader(
         cross_inputs, sampler=sampler, batch_size=batch_size
     )
-    for step, batch in enumerate(tqdm(dataloader, desc="Scoring in batches")):
+    iter = dataloader if silent else tqdm(dataloader, desc="Scoring in batches")
+    for step, batch in enumerate(iter):
         batch_scores = cross_reranker.score_candidate(batch.cuda(),
                                                       max_context_length,
                                                       is_context_encoder=is_context_encoder)
         scores = batch_scores if scores is None else torch.cat((scores, batch_scores), dim=0)
-
     return scores
 
 
@@ -113,7 +111,7 @@ def evaluate(cross_reranker,
     with torch.no_grad():
         logger.info('Eval: Scoring mention-mention edges using cross-encoder...')
         cross_men_scores = score_in_batches(cross_reranker, max_context_length, valid_men_inputs,
-                                            is_context_encoder=True, batch_size=64)
+                                            is_context_encoder=True, batch_size=8)
         cross_men_topk_scores, cross_men_topk_idxs = torch.sort(cross_men_scores, dim=1, descending=True)
         cross_men_topk_idxs = cross_men_topk_idxs.cpu()[:, :max_k]
         cross_men_topk_scores = cross_men_topk_scores.cpu()[:, :max_k]
@@ -121,7 +119,7 @@ def evaluate(cross_reranker,
 
         logger.info('Eval: Scoring mention-entity edges using cross-encoder...')
         cross_ent_scores = score_in_batches(cross_reranker, max_context_length, valid_ent_inputs,
-                                            is_context_encoder=False, batch_size=64)
+                                            is_context_encoder=False, batch_size=8)
         cross_ent_top1_score, cross_ent_top1_idx = torch.sort(cross_ent_scores, dim=1, descending=True)
         cross_ent_top1_idx = cross_ent_top1_idx.cpu()[:, 0]
         cross_ent_top1_score = cross_ent_top1_score.cpu()[:, 0]
@@ -209,14 +207,14 @@ def get_biencoder_nns(bi_reranker, pickle_src_path, entity_dictionary, entity_di
                       use_types, logger, n_gpu, params):
     """
     Train:
-        For each mention, store 64 nearest entities (excluding gold) and sorted mention idxs (excluding itself) to disk
-            64+1 nearest entities
-            (64+max_gold_cluster_len)[:64] nearest negative mentions
-            64 nearest gold mentions?
+        Store sorted entities and mention idxs to disk
+            <k_dict_nns> nearest non-gold (negative) entities
+            <k_men_nns> nearest negative mentions
+            min(<k_men_nns>, len(gold_cluster)-1) nearest gold mentions
     Dev:
         Store sorted entities and mention idxs to disk
-            64 nearest entities
-            64+1 nearest mentions
+            <k_dict_nns> nearest entities
+            <k_men_nns> nearest mentions
     """
     dict_embeddings = None
     biencoder_train_idxs, biencoder_valid_idxs = None, None
@@ -249,20 +247,22 @@ def get_biencoder_nns(bi_reranker, pickle_src_path, entity_dictionary, entity_di
             logger.info('Biencoder: Embedding and indexing finished')
 
             logger.info("Biencoder: Finding nearest mentions and entities for each mention...")
-            bi_dict_nns = np.zeros((len(train_men_embeddings), k_dict_nns))
-            bi_men_nns = np.zeros((len(train_men_embeddings), k_men_nns))
+            bi_dict_nns = np.zeros((len(train_men_embeddings), k_dict_nns))  # negatives
+            bi_men_nns = np.zeros((len(train_men_embeddings), k_men_nns))  # negatives
+            bi_men_gold_nns = -1 * np.ones((len(train_men_embeddings), k_men_nns))  # positives
             if not use_types:
                 _, bi_dict_nns_np = dict_index.search(train_men_embeddings, k_dict_nns+1)
                 _, bi_men_nns_np = train_men_index.search(train_men_embeddings, len(train_men_embeddings))
-                # bi_dict_nns, bi_men_nns = {}, {}
                 for i in range(len(bi_dict_nns_np)):
                     gold_idx = train_processed_data[i]['label_idxs'][0]
                     bi_dict_nns[i] = bi_dict_nns_np[i][bi_dict_nns_np[i] != gold_idx][:k_dict_nns]
-                    bi_men_nns[i] = bi_men_nns_np[i][bi_men_nns_np[i] != i][:k_men_nns]
+                    men_neg_mask = not np.isin(bi_men_nns_np[i], train_gold_clusters[gold_idx])
+                    bi_men_nns[i] = bi_men_nns_np[i][men_neg_mask][:k_men_nns]
+                    men_gold_mask = (np.isin(bi_men_nns_np[i], train_gold_clusters[gold_idx])) & (bi_men_nns_np[i] != i)
+                    gold_nns = bi_men_nns_np[i][men_gold_mask][:k_men_nns]
+                    # If len(gold_nns) < k_men_nns then set bi_men_gold_nns[i] = [...gold_nns, -1, -1, ...]
+                    bi_men_gold_nns[i][:len(gold_nns)] = gold_nns
             else:
-                # # It's possible that the type-specific instances are less in number than our search-k
-                # # Therefore, using dicts for the variable lengths
-                # bi_dict_nns, bi_men_nns = {}, {}
                 for entity_type in train_men_indexes:
                     men_embeds_by_type = train_men_embeddings[men_idxs_by_type[entity_type]]
                     _, dict_nns_by_type = dict_indexes[entity_type].search(men_embeds_by_type, k_dict_nns+1)
@@ -272,24 +272,19 @@ def get_biencoder_nns(bi_reranker, pickle_src_path, entity_dictionary, entity_di
                     for i, idx in enumerate(men_idxs_by_type[entity_type]):
                         gold_idx = train_processed_data[idx]['label_idxs'][0]
                         bi_dict_nns[idx] = dict_nns_idxs[i][dict_nns_idxs[i] != gold_idx][:k_dict_nns]
-                        bi_men_nns[idx] = men_nns_idxs[i][men_nns_idxs[i] != idx][:k_men_nns]
+                        men_neg_mask = not np.isin(men_nns_idxs[i], train_gold_clusters[gold_idx])
+                        bi_men_nns[idx] = men_nns_idxs[i][men_neg_mask][:k_men_nns]
+                        men_gold_mask = (np.isin(men_nns_idxs[i], train_gold_clusters[gold_idx])) & (men_nns_idxs[i] != idx)
+                        gold_nns = men_nns_idxs[i][men_gold_mask][:k_men_nns]
+                        # If len(gold_nns) < k_men_nns then set bi_men_gold_nns[i] = [...gold_nns, -1, -1, ...]
+                        bi_men_gold_nns[idx][:len(gold_nns)] = gold_nns
             logger.info("Biencoder: Search finished")
-
-            # logger.info("Biencoder: Finding nearest mentions per gold entity cluster...")
-            # # To restrict the number of cross-encoder scoring required to compute MST
-            # sorted_cluster_mens = {}
-            # _, sorted_cluster_mens_np = train_men_index.search(np.array(list(train_gold_clusters.keys())).reshape(-1, 1),
-            #                                                    len(train_men_embeddings))
-            # for i, cluster_ent_idx in enumerate(train_gold_clusters):
-            #     sorted_cluster_mens[cluster_ent_idx] = sorted_cluster_mens_np[i][np.isin(sorted_cluster_mens_np[i],
-            #                                                                              train_gold_clusters[cluster_ent_idx])]
-            # logger.info("Biencoder: Search finished...")
 
             logger.info("Biencoder: Saving sorted biencoder train indices...")
             biencoder_train_idxs = {
                 'dict_nns': bi_dict_nns.astype(int),  # Nearest negative entity idxs
                 'men_nns': bi_men_nns.astype(int),  # Nearest negative mention idxs
-                # 'nn_mens_per_entity': sorted_cluster_mens  # Mention idxs nearest to each gold cluster entity
+                'men_gold_nns': bi_men_gold_nns.astype(int)  # Nearest gold mention idxs
             }
             with open(biencoder_train_idxs_pkl_path, 'wb') as write_handle:
                 pickle.dump(biencoder_train_idxs, write_handle,
@@ -530,30 +525,33 @@ def get_gold_arbo_links(cross_reranker,
                         train_men_vecs,
                         train_processed_data,
                         train_gold_clusters,
-                        max_seq_length):
+                        gold_men_nns,
+                        max_seq_length,
+                        knn):
+    cross_reranker.model.eval()
     with torch.no_grad():
-        cross_reranker.model.eval()
         gold_links = {}
         n_entities, n_mentions = len(entity_dict_vecs), len(train_men_vecs)
-        for mention_idx in range(len(train_men_vecs)):
+        for mention_idx in tqdm(range(len(train_men_vecs)), desc="Computing gold arbos"):
             # Assuming that there is only 1 gold label
             cluster_ent = train_processed_data[mention_idx]['label_idxs'][0]
             if mention_idx not in gold_links:
-                cluster_mens = train_gold_clusters[cluster_ent]
+                # cluster_mens = train_gold_clusters[cluster_ent]
+                # Get <knn> nearest (biencoder) gold mentions
+                cluster_mens = np.concatenate(([mention_idx], gold_men_nns[gold_men_nns != -1][:knn]))
                 # Simply link to the entity if cluster is singleton
                 if len(cluster_mens) == 1:
                     gold_links[mention_idx] = cluster_ent
                     continue
-                # Run MST on mention clusters of all gold entities of current query mention to find positive edge
+                # Run MST on the current query mention's (biencoder) k-NN gold sub-cluster to find positive edges
                 rows, cols, data, shape = [], [], [], (n_entities + n_mentions, n_entities + n_mentions)
-                # TODO: Reduce the number of mentions (maybe based on bi-encoder k-nn mentions to the entity)?
                 to_ent_input = concat_for_crossencoder(train_men_vecs[cluster_mens],
                                                        entity_dict_vecs[cluster_ent].expand(len(cluster_mens), 1,
                                                                                             entity_dict_vecs.size(1)),
                                                        max_seq_length)  # Shape: N x 1 x 2D
                 try:
                     to_ent_data = score_in_batches(cross_reranker, max_context_length, to_ent_input,
-                                                   is_context_encoder=False, batch_size=8)
+                                                   is_context_encoder=False, batch_size=8, silent=True)
                 except:
                     raise ValueError(f"Probably a batch size error. The current cluster size was {len(cluster_mens)}")
                 to_ent_data = to_ent_data.cpu()
@@ -564,7 +562,7 @@ def get_gold_arbo_links(cross_reranker,
                                                        max_seq_length)  # Shape: N x N x 2D
                 try:
                     to_men_data = score_in_batches(cross_reranker, max_context_length, to_men_input,
-                                                   is_context_encoder=True, batch_size=8)
+                                                   is_context_encoder=True, batch_size=8, silent=True)
                 except:
                     raise ValueError(f"Probably a batch size error. The current cluster size was {len(cluster_mens)}")
                 to_men_data = to_men_data.cpu()
@@ -677,7 +675,7 @@ def get_train_neg_cross_inputs(cross_reranker,
     with torch.no_grad():
         logger.info('Scoring mention-mention negative edges using cross-encoder...')
         neg_men_scores = score_in_batches(cross_reranker, max_context_length, train_men_concat_inputs,
-                                          is_context_encoder=True, batch_size=64)
+                                          is_context_encoder=True, batch_size=8)
         neg_men_topk_idxs = torch.argsort(neg_men_scores, dim=1, descending=True)[:, :n_knn_men_negs]
         stacked = []
         for r in range(neg_men_topk_idxs.size(0)):
@@ -687,7 +685,7 @@ def get_train_neg_cross_inputs(cross_reranker,
 
         logger.info('Scoring mention-mention negative edges using cross-encoder...')
         neg_ent_scores = score_in_batches(cross_reranker, max_context_length, train_ent_concat_inputs,
-                                          is_context_encoder=False, batch_size=64)
+                                          is_context_encoder=False, batch_size=8)
         neg_ent_topk_idxs = torch.argsort(neg_ent_scores, dim=1, descending=True)[:, :n_knn_ent_negs]
         stacked = []
         for r in range(neg_ent_topk_idxs.size(0)):
@@ -783,7 +781,6 @@ def main(params):
                                                                    logger)
     # Store query mention vectors
     valid_men_vecs = valid_tensor_data[:][0]
-    n_valid_mentions = len(valid_men_vecs)
 
     if params["only_evaluate"]:
         _, biencoder_valid_idxs = get_biencoder_nns()
@@ -804,8 +801,6 @@ def main(params):
                  max_k=8,
                  k_biencoder=64)
         exit()
-
-
 
     # Get clusters of gold mentions that map to a unique entity
     train_gold_clusters, max_gold_cluster_len = get_gold_clusters(train_processed_data)
@@ -878,13 +873,13 @@ def main(params):
             'k': 0
         }
     }
-    n_knn_negs = 8  # TODO: Add to params
+    n_knn_negs = params["knn_negs"]  # Number of k-NN negatives in each row of the training batch (default: 8)
     n_knn_ent_negs, n_knn_men_negs = n_knn_negs // 2, n_knn_negs // 2
 
     for epoch_idx in trange(params["num_train_epochs"], desc="Epoch"):
         torch.cuda.empty_cache()
 
-        # Compute arborescences per gold cluster and store the ground-truth positive edges for each mention
+        # Compute arborescences per gold k-NN cluster for each mention and store the ground-truth positive edges
         logger.info("Computing gold arborescence links for positive training labels")
         gold_links = get_gold_arbo_links(cross_reranker,
                                          max_context_length,
@@ -892,7 +887,8 @@ def main(params):
                                          train_men_vecs,
                                          train_processed_data,
                                          train_gold_clusters,
-                                         max_seq_length)
+                                         max_seq_length,
+                                         knn=32)
         logger.info("Done")
 
         # Score nearest biencoder negatives using cross-encoder and store nearest k for every epoch
@@ -924,7 +920,7 @@ def main(params):
                 max_context_length=max_context_length)
 
             loss = cross_reranker(batch_positive_scores.cuda(), batch_negative_men_inputs.cuda(),
-                                     batch_negative_ent_inputs.cuda(), max_context_length)
+                                  batch_negative_ent_inputs.cuda(), max_context_length)
 
             if grad_acc_steps > 1:
                 loss = loss / grad_acc_steps
