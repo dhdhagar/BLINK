@@ -650,13 +650,13 @@ def build_cross_concat_input(biencoder_idxs,
         bi_men_inputs = None
         for bi_men_idx in bi_men_idxs:
             bi_men_inputs = men_vecs[bi_men_idx].unsqueeze(dim=0) if bi_men_inputs is None else \
-                torch.cat((bi_men_inputs, men_vecs[bi_men_idx]), dim=0)
+                torch.cat((bi_men_inputs, men_vecs[bi_men_idx].unsqueeze(dim=0)), dim=0)
         bi_men_inputs = torch.unsqueeze(bi_men_inputs, dim=0)
         # bi_ent_inputs = torch.unsqueeze(torch.tensor(list(map(lambda x: entity_dict_vecs[x].numpy(), bi_ent_idxs))), dim=0)
         bi_ent_inputs = None
         for bi_ent_idx in bi_ent_idxs:
             bi_ent_inputs = entity_dict_vecs[bi_ent_idx].unsqueeze(dim=0) if bi_ent_inputs is None else \
-                torch.cat((bi_ent_inputs, entity_dict_vecs[bi_ent_idx]), dim=0)
+                torch.cat((bi_ent_inputs, entity_dict_vecs[bi_ent_idx].unsqueeze(dim=0)), dim=0)
         bi_ent_inputs = torch.unsqueeze(bi_ent_inputs, dim=0)
         # Concatenate for cross-encoder
         cross_men_inputs = concat_for_crossencoder(men_vecs[mention_idx:mention_idx + 1],
