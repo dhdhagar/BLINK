@@ -136,7 +136,14 @@ def evaluate(cross_reranker,
         cross_ent_top1_score = cross_ent_top1_score.cpu()[:, 0]
         logger.info('Eval: Scoring done')
 
+    bi_recall = 0.
+    # TODO: Add cross-encoder recall metrics
+
     for men_idx in tqdm(range(len(valid_processed_data)), total=len(valid_processed_data), desc="Eval: Building graphs"):
+        # Track biencoder recall@<k_biencoder>
+        gold_idx = valid_processed_data[men_idx]["label_idxs"][0]
+        if gold_idx in bi_ent_idxs[men_idx]:
+            bi_recall += 1.
         # Get nearest entity
         m_e_idx = bi_ent_idxs[men_idx, cross_ent_top1_idx[men_idx]]
         m_e_score = cross_ent_top1_score[men_idx]
@@ -160,6 +167,10 @@ def evaluate(cross_reranker,
                     joint_graphs[k]['cols'], m_m_idxs[:k])
                 joint_graphs[k]['data'] = np.append(
                     joint_graphs[k]['data'], m_m_scores[:k])
+
+    # Compute biencoder recall
+    bi_recall /= len(valid_processed_data)
+    logger.info(f"Eval: Biencoder recall@{k_biencoder} = {bi_recall*100}%")
 
     # Partition graphs and analyze clusters for final predictions
     max_eval_acc = {
@@ -919,9 +930,7 @@ def main(params):
     n_knn_ent_negs, n_knn_men_negs = n_knn_negs // 2, n_knn_negs // 2
 
     for epoch_idx in range(params["num_train_epochs"]):
-        logger.info(f"""
-        Epoch {epoch_idx}:
-        ------------------\n""")
+        logger.info(f"***** Starting EPOCH {epoch_idx} *****")
         torch.cuda.empty_cache()
 
         # Compute arborescences per gold k-NN cluster for each mention and store the ground-truth positive edges
@@ -1034,10 +1043,10 @@ def main(params):
         logger.info("\n")
 
     execution_time = (time.time() - time_start) / 60
-    logger.info("\nThe training took {} minutes".format(execution_time))
-    logger.info("\nBest performance (epoch, mode, knn):")
+    logger.info("The training took {} minutes".format(execution_time))
+    logger.info("Best performance:")
     logger.info(json.dumps(best_score))
-    logger.info("\nTraining finished")
+    logger.info("***** Training finished *****")
 
 
 if __name__ == "__main__":
