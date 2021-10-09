@@ -168,10 +168,6 @@ def evaluate(cross_reranker,
                 joint_graphs[k]['data'] = np.append(
                     joint_graphs[k]['data'], m_m_scores[:k])
 
-    # Compute biencoder recall
-    bi_recall /= len(valid_processed_data)
-    logger.info(f"Eval: Biencoder recall@{k_biencoder} = {bi_recall*100}%")
-
     # Partition graphs and analyze clusters for final predictions
     max_eval_acc = {
         'directed': -1.,
@@ -196,7 +192,10 @@ def evaluate(cross_reranker,
                 if k == 0 and mode == 'directed':
                     max_eval_acc['undirected'] = acc
             logger.info(f"Eval: accuracy for graph@(k={k}, mode={mode}): {acc}%")
-    logger.info(f"Eval: Best accuracy = {json.dumps(max_eval_acc)}")
+    # Compute biencoder recall
+    bi_recall /= len(valid_processed_data)
+    logger.info(f"Eval: Biencoder recall@{k_biencoder} = {bi_recall * 100}%")
+    logger.info(f"Eval: Best cross-encoder accuracy = {json.dumps(max_eval_acc)}")
     return max_eval_acc
 
 
