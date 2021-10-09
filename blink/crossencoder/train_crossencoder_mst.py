@@ -30,6 +30,7 @@ from blink.common.params import BlinkParser
 
 from IPython import embed
 
+SCORING_BATCH_SIZE = 128
 
 def concat_for_crossencoder(context_inputs, candidate_inputs, max_seq_length):
     """
@@ -59,7 +60,8 @@ def concat_for_crossencoder(context_inputs, candidate_inputs, max_seq_length):
     return torch.LongTensor(new_input)
 
 
-def score_in_batches(cross_reranker, max_context_length, cross_inputs, is_context_encoder, batch_size=128, silent=False):
+def score_in_batches(cross_reranker, max_context_length, cross_inputs, is_context_encoder, silent=False):
+    batch_size = SCORING_BATCH_SIZE
     n_inputs, scores, reshaped = len(cross_inputs), None, False
     _iter = [cross_inputs]
     if n_inputs > 1:
@@ -122,7 +124,7 @@ def evaluate(cross_reranker,
     with torch.no_grad():
         logger.info('Eval: Scoring mention-mention edges using cross-encoder...')
         cross_men_scores = score_in_batches(cross_reranker, max_context_length, valid_men_inputs,
-                                            is_context_encoder=True, batch_size=64)
+                                            is_context_encoder=True)
         cross_men_topk_scores, cross_men_topk_idxs = torch.sort(cross_men_scores, dim=1, descending=True)
         cross_men_topk_idxs = cross_men_topk_idxs.cpu()[:, :max_k]
         cross_men_topk_scores = cross_men_topk_scores.cpu()[:, :max_k]
@@ -130,7 +132,7 @@ def evaluate(cross_reranker,
 
         logger.info('Eval: Scoring mention-entity edges using cross-encoder...')
         cross_ent_scores = score_in_batches(cross_reranker, max_context_length, valid_ent_inputs,
-                                            is_context_encoder=False, batch_size=64)
+                                            is_context_encoder=False)
         cross_ent_top1_score, cross_ent_top1_idx = torch.sort(cross_ent_scores, dim=1, descending=True)
         cross_ent_top1_idx = cross_ent_top1_idx.cpu()[:, 0]
         cross_ent_top1_score = cross_ent_top1_score.cpu()[:, 0]
@@ -573,7 +575,7 @@ def get_gold_arbo_links(cross_reranker,
                                                        max_seq_length)  # Shape: N x 1 x 2D
                 try:
                     to_ent_data = score_in_batches(cross_reranker, max_context_length, to_ent_input,
-                                                   is_context_encoder=False, batch_size=64, silent=True)
+                                                   is_context_encoder=False, silent=True)
                 except:
                     raise ValueError(f"Probably a batch size error. The current cluster size was {len(cluster_mens)}")
                 to_men_input = concat_for_crossencoder(train_men_vecs[cluster_mens],
@@ -583,7 +585,7 @@ def get_gold_arbo_links(cross_reranker,
                                                        max_seq_length)  # Shape: N x N x 2D
                 try:
                     to_men_data = score_in_batches(cross_reranker, max_context_length, to_men_input,
-                                                   is_context_encoder=True, batch_size=64, silent=True)
+                                                   is_context_encoder=True, silent=True)
                 except:
                     raise ValueError(f"Probably a batch size error. The current cluster size was {len(cluster_mens)}")
                 for i in range(len(cluster_mens)):
@@ -706,7 +708,7 @@ def get_train_neg_cross_inputs(cross_reranker,
         if debug:
             concat_inputs = concat_inputs[:200]
         scores = score_in_batches(cross_reranker, max_context_length, concat_inputs,
-                                  is_context_encoder=is_context_encoder, batch_size=64)
+                                  is_context_encoder=is_context_encoder)
         topk_idxs = torch.argsort(scores, dim=1, descending=True)[:, :n_knn]
         stacked = []
         for r in range(topk_idxs.size(0)):
@@ -731,6 +733,7 @@ def main(params):
     # Parameter initializations
     logger = utils.get_logger(params["output_path"])
     debug = params["debug"]
+    SCORING_BATCH_SIZE = params["scoring_batch_size"]
     model_output_path = params["output_path"]
     if not os.path.exists(model_output_path):
         os.makedirs(model_output_path)
@@ -941,7 +944,7 @@ def main(params):
                                          train_processed_data,
                                          biencoder_train_idxs['men_gold_nns'],
                                          max_seq_length,
-                                         knn=64,
+                                         knn=params["gold_arbo_knn"],
                                          debug=debug)
         logger.info("Done")
 
