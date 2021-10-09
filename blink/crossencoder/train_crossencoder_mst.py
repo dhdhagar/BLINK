@@ -781,6 +781,10 @@ def main(params):
                                                                                         pickle_src_path,
                                                                                         params,
                                                                                         logger)
+        # Reduce dataset size for quick debugging
+        if params["debug"]:
+            train_tensor_data = train_tensor_data[:200]
+
         # Store query mention vectors
         train_men_vecs = train_tensor_data[:][0]
         # Initialize training data loader
