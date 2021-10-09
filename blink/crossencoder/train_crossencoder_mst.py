@@ -881,6 +881,7 @@ def main(params):
     # Reduce dataset size for quick debugging
     if params["debug"]:
         train_tensor_data = train_tensor_data[:200]
+        train_men_vecs = train_men_vecs[:200]
 
     # Initialize training data loader
     train_sampler = RandomSampler(train_tensor_data) if params["shuffle"] else SequentialSampler(train_tensor_data)
