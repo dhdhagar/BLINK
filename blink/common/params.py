@@ -303,6 +303,10 @@ class BlinkParser(argparse.ArgumentParser):
             help="Number of biencoder nearest-neighbors to fetch for cross-encoder scoring",
         )
         parser.add_argument(
+            "--scoring_batch_size", type=int, default=64,
+            help="Batch size to use for cross-encoder scoring",
+        )
+        parser.add_argument(
             "--skip_initial_eval", action="store_true",
             help="Skip model evaluation before the start of training",
         )
