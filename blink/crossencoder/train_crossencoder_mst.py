@@ -918,7 +918,7 @@ def main(params):
     n_knn_negs = params["knn_negs"]  # Number of k-NN negatives in each row of the training batch (default: 8)
     n_knn_ent_negs, n_knn_men_negs = n_knn_negs // 2, n_knn_negs // 2
 
-    for epoch_idx in params["num_train_epochs"]:
+    for epoch_idx in range(params["num_train_epochs"]):
         logger.info(f"""
         Epoch {epoch_idx}:
         ------------------\n""")
