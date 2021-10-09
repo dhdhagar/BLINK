@@ -69,13 +69,16 @@ def score_in_batches(cross_reranker, max_context_length, cross_inputs, is_contex
     for step, batch in enumerate(iter):
         batch_shape = batch.size()
         if batch_shape[0] < cross_reranker.n_gpu:
+            reshaped = True
             # Repeat to get length of 0th dimension >= n_gpu
             repeat_shape = [math.ceil(cross_reranker.n_gpu / float(batch_shape[0])), *[1]*(len(batch_shape) - 1)]
-            required_shape = [cross_reranker.n_gpu, *[-1]*(len(batch_shape) - 1)]
-            batch = batch.repeat(repeat_shape).view(required_shape)
+            batch = batch.repeat(repeat_shape)[:cross_reranker.n_gpu]
         batch_scores = cross_reranker.score_candidate(batch.cuda(),
                                                       max_context_length,
                                                       is_context_encoder=is_context_encoder)
+        if reshaped:
+            reshaped = False
+            batch_scores = batch_scores[:batch_shape[0]]
         scores = batch_scores if scores is None else torch.cat((scores, batch_scores), dim=0)
     return scores
 
