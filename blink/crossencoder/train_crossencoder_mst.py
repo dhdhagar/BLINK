@@ -60,14 +60,15 @@ def concat_for_crossencoder(context_inputs, candidate_inputs, max_seq_length):
 
 
 def score_in_batches(cross_reranker, max_context_length, cross_inputs, is_context_encoder, batch_size=128, silent=False):
-    scores = None
-    sampler = SequentialSampler(cross_inputs)
-    dataloader = DataLoader(
-        cross_inputs, sampler=sampler, batch_size=batch_size
-    )
-    reshaped = False
-    iter = dataloader if silent else tqdm(dataloader, desc=f"Scoring in batches (size={batch_size})")
-    for step, batch in enumerate(iter):
+    n_inputs, scores, reshaped = len(cross_inputs), None, False
+    _iter = [cross_inputs]
+    if n_inputs > 1:
+        sampler = SequentialSampler(cross_inputs)
+        dataloader = DataLoader(
+            cross_inputs, sampler=sampler, batch_size=batch_size
+        )
+        _iter = dataloader if silent else tqdm(dataloader, desc=f"Scoring in batches (size={batch_size})")
+    for batch in _iter:
         batch_shape = batch.size()
         if batch_shape[0] < cross_reranker.n_gpu:
             reshaped = True
@@ -634,9 +635,8 @@ def construct_train_batch(cross_reranker,
         pos_label_input = concat_for_crossencoder(train_men_vecs[mention_idx:mention_idx + 1],
                                                   to_input,
                                                   max_seq_length)  # Shape: 1 x 1 x 2D
-        pos_score = cross_reranker.score_candidate(pos_label_input.cuda(),
-                                                   max_context_length,
-                                                   is_context_encoder=is_context_encoder)
+        pos_score = score_in_batches(cross_reranker, max_context_length, pos_label_input.cuda(),
+                                     is_context_encoder=is_context_encoder)
         batch_positive_scores.append(pos_score)
     batch_positive_scores = torch.cat(batch_positive_scores)
     batch_negative_ent_inputs = neg_ent_topk_inputs[mention_idxs]
