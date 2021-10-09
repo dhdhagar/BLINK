@@ -619,7 +619,7 @@ def construct_train_batch(cross_reranker,
                           max_seq_length,
                           max_context_length):
     n_entities = len(entity_dict_vecs)
-    batch_positive_scores = []
+    batch_positive_scores = None
     # Construct the batch matrix
     for mention_idx in mention_idxs:
         mention_idx = mention_idx.item()
@@ -639,12 +639,12 @@ def construct_train_batch(cross_reranker,
                                                   max_seq_length)  # Shape: 1 x 1 x 2D
         pos_score = score_in_batches(cross_reranker, max_context_length, pos_label_input.cuda(),
                                      is_context_encoder=is_context_encoder)
-        batch_positive_scores.append(pos_score)
-    batch_positive_scores = torch.cat(batch_positive_scores)
+        batch_positive_scores = pos_score if batch_positive_scores is None else \
+            torch.cat((batch_positive_scores, pos_score), dim=0)
     batch_negative_ent_inputs = neg_ent_topk_inputs[mention_idxs]
     batch_negative_men_inputs = neg_men_topk_inputs[mention_idxs]
 
-    return batch_positive_scores, batch_negative_ent_inputs, batch_negative_men_inputs
+    return batch_positive_scores, batch_negative_ent_inputs.cuda(), batch_negative_men_inputs.cuda()
 
 
 def build_cross_concat_input(biencoder_idxs,
@@ -918,7 +918,10 @@ def main(params):
     n_knn_negs = params["knn_negs"]  # Number of k-NN negatives in each row of the training batch (default: 8)
     n_knn_ent_negs, n_knn_men_negs = n_knn_negs // 2, n_knn_negs // 2
 
-    for epoch_idx in trange(params["num_train_epochs"], desc="Epoch"):
+    for epoch_idx in params["num_train_epochs"]:
+        logger.info(f"""
+        Epoch {epoch_idx}:
+        ------------------\n""")
         torch.cuda.empty_cache()
 
         # Compute arborescences per gold k-NN cluster for each mention and store the ground-truth positive edges
@@ -935,6 +938,7 @@ def main(params):
         logger.info("Done")
 
         # Score biencoder negatives using cross-encoder and store nearest-k for this epoch
+        logger.info("Computing cross-encoder inputs for hard-negatives")
         neg_men_topk_inputs, neg_ent_topk_inputs = get_train_neg_cross_inputs(cross_reranker,
                                                                               max_context_length,
                                                                               train_men_concat_inputs,
@@ -943,6 +947,7 @@ def main(params):
                                                                               n_knn_ent_negs,
                                                                               logger,
                                                                               debug=debug)
+        logger.info("Done")
 
         tr_loss = 0
         cross_model.train()
@@ -960,8 +965,8 @@ def main(params):
                 max_seq_length=max_seq_length,
                 max_context_length=max_context_length)
 
-            loss = cross_reranker(batch_positive_scores.cuda(), batch_negative_men_inputs.cuda(),
-                                  batch_negative_ent_inputs.cuda(), max_context_length)
+            loss = cross_reranker(batch_positive_scores, batch_negative_men_inputs,
+                                  batch_negative_ent_inputs, max_context_length)
 
             if grad_acc_steps > 1:
                 loss = loss / grad_acc_steps
