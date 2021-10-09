@@ -253,7 +253,7 @@ class BlinkParser(argparse.ArgumentParser):
             "--gradient_accumulation_steps",
             type=int,
             default=1,
-            help="Number of updates steps to accumualte before performing a backward/update pass.",
+            help="Number of updates steps to accumulate before performing a backward/update pass.",
         )
         parser.add_argument(
             "--type_optimization",
@@ -301,6 +301,10 @@ class BlinkParser(argparse.ArgumentParser):
         parser.add_argument(
             "--bi_knn", type=int, default=64,
             help="Number of biencoder nearest-neighbors to fetch for cross-encoder scoring",
+        )
+        parser.add_argument(
+            "--gold_arbo_knn", type=int, default=64,
+            help="Number of k-NN edges to use per gold cluster to compute aroborescences for gold links",
         )
         parser.add_argument(
             "--scoring_batch_size", type=int, default=64,
