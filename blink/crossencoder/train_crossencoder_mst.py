@@ -537,12 +537,14 @@ def get_gold_arbo_links(cross_reranker,
                         train_processed_data,
                         gold_men_nns,
                         max_seq_length,
-                        knn):
+                        knn,
+                        debug=False):
     cross_reranker.model.eval()
     with torch.no_grad():
         gold_links = {}
         n_entities, n_mentions = len(entity_dict_vecs), len(train_men_vecs)
-        for mention_idx in tqdm(range(len(train_men_vecs)), desc="Computing gold arbos"):
+        _iter = tqdm(range(len(train_men_vecs) if not debug else 200), desc="Computing gold arbos")
+        for mention_idx in _iter:
             # Assuming that there is only 1 gold label
             cluster_ent = train_processed_data[mention_idx]['label_idxs'][0]
             if mention_idx not in gold_links:
@@ -688,35 +690,37 @@ def get_train_neg_cross_inputs(cross_reranker,
                                train_ent_concat_inputs,
                                n_knn_men_negs,
                                n_knn_ent_negs,
-                               logger):
+                               logger,
+                               debug=False):
+    def _helper(concat_inputs, n_knn, is_context_encoder):
+        if debug:
+            concat_inputs = concat_inputs[:200]
+        scores = score_in_batches(cross_reranker, max_context_length, concat_inputs,
+                                  is_context_encoder=is_context_encoder, batch_size=64)
+        topk_idxs = torch.argsort(scores, dim=1, descending=True)[:, :n_knn]
+        stacked = []
+        for r in range(topk_idxs.size(0)):
+            stacked.append(concat_inputs[r][topk_idxs[r]])
+        topk_inputs = torch.stack(stacked)
+        logger.info('Scoring done')
+        return topk_inputs
+
     # Score biencoder negatives using cross-encoder and store nearest-k for current epoch
     cross_reranker.model.eval()
     with torch.no_grad():
         logger.info('Scoring mention-mention negative edges using cross-encoder...')
-        neg_men_scores = score_in_batches(cross_reranker, max_context_length, train_men_concat_inputs,
-                                          is_context_encoder=True, batch_size=64)
-        neg_men_topk_idxs = torch.argsort(neg_men_scores, dim=1, descending=True)[:, :n_knn_men_negs]
-        stacked = []
-        for r in range(neg_men_topk_idxs.size(0)):
-            stacked.append(train_men_concat_inputs[r][neg_men_topk_idxs[r]])
-        neg_men_topk_inputs = torch.stack(stacked)
-        logger.info('Scoring done')
-
+        neg_men_topk_inputs = _helper(concat_inputs=train_men_concat_inputs, n_knn=n_knn_men_negs,
+                                      is_context_encoder=True)
         logger.info('Scoring mention-entity negative edges using cross-encoder...')
-        neg_ent_scores = score_in_batches(cross_reranker, max_context_length, train_ent_concat_inputs,
-                                          is_context_encoder=False, batch_size=64)
-        neg_ent_topk_idxs = torch.argsort(neg_ent_scores, dim=1, descending=True)[:, :n_knn_ent_negs]
-        stacked = []
-        for r in range(neg_ent_topk_idxs.size(0)):
-            stacked.append(train_ent_concat_inputs[r][neg_ent_topk_idxs[r]])
-        neg_ent_topk_inputs = torch.stack(stacked)
-        logger.info('Scoring done')
+        neg_ent_topk_inputs = _helper(concat_inputs=train_ent_concat_inputs, n_knn=n_knn_ent_negs,
+                                      is_context_encoder=False)
     return neg_men_topk_inputs, neg_ent_topk_inputs
 
 
 def main(params):
     # Parameter initializations
     logger = utils.get_logger(params["output_path"])
+    debug = params["debug"]
     model_output_path = params["output_path"]
     if not os.path.exists(model_output_path):
         os.makedirs(model_output_path)
@@ -879,9 +883,8 @@ def main(params):
                  k_biencoder=64)
 
     # Reduce dataset size for quick debugging
-    if params["debug"]:
+    if debug:
         train_tensor_data = train_tensor_data[:200]
-        train_men_vecs = train_men_vecs[:200]
 
     # Initialize training data loader
     train_sampler = RandomSampler(train_tensor_data) if params["shuffle"] else SequentialSampler(train_tensor_data)
@@ -927,7 +930,8 @@ def main(params):
                                          train_processed_data,
                                          biencoder_train_idxs['men_gold_nns'],
                                          max_seq_length,
-                                         knn=64)
+                                         knn=64,
+                                         debug=debug)
         logger.info("Done")
 
         # Score biencoder negatives using cross-encoder and store nearest-k for this epoch
@@ -937,7 +941,8 @@ def main(params):
                                                                               train_ent_concat_inputs,
                                                                               n_knn_men_negs,
                                                                               n_knn_ent_negs,
-                                                                              logger)
+                                                                              logger,
+                                                                              debug=debug)
 
         tr_loss = 0
         cross_model.train()
