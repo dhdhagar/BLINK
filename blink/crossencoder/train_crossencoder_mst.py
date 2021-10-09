@@ -781,15 +781,8 @@ def main(params):
                                                                                         pickle_src_path,
                                                                                         params,
                                                                                         logger)
-        # Reduce dataset size for quick debugging
-        if params["debug"]:
-            train_tensor_data = train_tensor_data[:200]
-
         # Store query mention vectors
         train_men_vecs = train_tensor_data[:][0]
-        # Initialize training data loader
-        train_sampler = RandomSampler(train_tensor_data) if params["shuffle"] else SequentialSampler(train_tensor_data)
-        train_dataloader = DataLoader(train_tensor_data, sampler=train_sampler, batch_size=train_batch_size)
     # Store entity dictionary vectors
     entity_dict_vecs = torch.tensor(list(map(lambda x: x['ids'], entity_dictionary)), dtype=torch.long)
 
@@ -885,6 +878,16 @@ def main(params):
                  max_k=8,
                  k_biencoder=64)
 
+    # Reduce dataset size for quick debugging
+    if params["debug"]:
+        train_tensor_data = train_tensor_data[:200]
+
+    # Initialize training data loader
+    train_sampler = RandomSampler(train_tensor_data) if params["shuffle"] else SequentialSampler(train_tensor_data)
+    train_dataloader = DataLoader(train_tensor_data, sampler=train_sampler, batch_size=train_batch_size)
+    if not params["silent"]:
+        train_dataloader = tqdm(train_dataloader, desc="Batch")
+
     # Start training
     time_start = time.time()
     utils.write_to_file(
@@ -937,9 +940,7 @@ def main(params):
 
         tr_loss = 0
         cross_model.train()
-        dataloader = train_dataloader if params["silent"] else tqdm(train_dataloader, desc="Batch")
-
-        for step, batch in enumerate(dataloader):
+        for step, batch in enumerate(train_dataloader):
             _, _, _, mention_idxs = batch
 
             batch_positive_scores, batch_negative_ent_inputs, batch_negative_men_inputs = construct_train_batch(
@@ -1023,10 +1024,8 @@ def main(params):
 
     execution_time = (time.time() - time_start) / 60
     logger.info("\nThe training took {} minutes".format(execution_time))
-
     logger.info("\nBest performance (epoch, mode, knn):")
     logger.info(json.dumps(best_score))
-
     logger.info("\nTraining finished")
 
 
