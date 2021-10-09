@@ -65,6 +65,7 @@ def score_in_batches(cross_reranker, max_context_length, cross_inputs, is_contex
     dataloader = DataLoader(
         cross_inputs, sampler=sampler, batch_size=batch_size
     )
+    reshaped = False
     iter = dataloader if silent else tqdm(dataloader, desc=f"Scoring in batches (size={batch_size})")
     for step, batch in enumerate(iter):
         batch_shape = batch.size()
