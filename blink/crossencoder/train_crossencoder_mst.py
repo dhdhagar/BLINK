@@ -911,6 +911,7 @@ def main(params):
     utils.write_to_file(
         os.path.join(model_output_path, "training_params.txt"), str(params)
     )
+    checkpoint_pkl_path = os.path.join(pickle_src_path, 'epoch_checkpoint.pickle')
     logger.info("Starting training")
     logger.info(
         "device: {} n_gpu: {}, data_parallel: {}".format(device, n_gpu, params["data_parallel"])
@@ -936,30 +937,51 @@ def main(params):
         logger.info(f"***** Starting EPOCH {epoch_idx} *****")
         torch.cuda.empty_cache()
 
-        # Compute arborescences per gold k-NN cluster for each mention and store the ground-truth positive edges
-        logger.info("Computing gold arborescence links for positive training labels")
-        gold_links = get_gold_arbo_links(cross_reranker,
-                                         max_context_length,
-                                         entity_dict_vecs,
-                                         train_men_vecs,
-                                         train_processed_data,
-                                         biencoder_train_idxs['men_gold_nns'],
-                                         max_seq_length,
-                                         knn=params["gold_arbo_knn"],
-                                         debug=debug)
-        logger.info("Done")
+        checkpoint_data = None
+        if params["checkpoint_epoch_data"]:
+            if os.path.isfile(checkpoint_pkl_path):
+                logger.info("Loading stored epoch checkpoint data...")
+                with open(checkpoint_pkl_path, 'rb') as read_handle:
+                    checkpoint_data = pickle.load(read_handle)
+                    gold_links = checkpoint_data['gold_links']
+                    neg_men_topk_inputs = checkpoint_data['neg_men_topk_inputs']
+                    neg_ent_topk_inputs = checkpoint_data['neg_ent_topk_inputs']
 
-        # Score biencoder negatives using cross-encoder and store nearest-k for this epoch
-        logger.info("Computing cross-encoder inputs for hard-negatives")
-        neg_men_topk_inputs, neg_ent_topk_inputs = get_train_neg_cross_inputs(cross_reranker,
-                                                                              max_context_length,
-                                                                              train_men_concat_inputs,
-                                                                              train_ent_concat_inputs,
-                                                                              n_knn_men_negs,
-                                                                              n_knn_ent_negs,
-                                                                              logger,
-                                                                              debug=debug)
-        logger.info("Done")
+        if checkpoint_data is None:
+            # Compute arborescences per gold k-NN cluster for each mention and store the ground-truth positive edges
+            logger.info("Computing gold arborescence links for positive training labels")
+            gold_links = get_gold_arbo_links(cross_reranker,
+                                             max_context_length,
+                                             entity_dict_vecs,
+                                             train_men_vecs,
+                                             train_processed_data,
+                                             biencoder_train_idxs['men_gold_nns'],
+                                             max_seq_length,
+                                             knn=params["gold_arbo_knn"],
+                                             debug=debug)
+            logger.info("Done")
+
+            # Score biencoder negatives using cross-encoder and store nearest-k for this epoch
+            logger.info("Computing cross-encoder inputs for hard-negatives")
+            neg_men_topk_inputs, neg_ent_topk_inputs = get_train_neg_cross_inputs(cross_reranker,
+                                                                                  max_context_length,
+                                                                                  train_men_concat_inputs,
+                                                                                  train_ent_concat_inputs,
+                                                                                  n_knn_men_negs,
+                                                                                  n_knn_ent_negs,
+                                                                                  logger,
+                                                                                  debug=debug)
+            logger.info("Done")
+
+        if params["checkpoint_epoch_data"]:
+            logger.info("Checkpointing epoch data...")
+            with open(checkpoint_pkl_path, 'wb') as write_handle:
+                pickle.dump({
+                    'gold_links': gold_links,
+                    'neg_men_topk_inputs': neg_men_topk_inputs,
+                    'neg_ent_topk_inputs': neg_ent_topk_inputs
+                }, write_handle, protocol=pickle.HIGHEST_PROTOCOL)
+            logger.info("Checkpoint saved!")
 
         tr_loss = 0
         cross_model.train()
