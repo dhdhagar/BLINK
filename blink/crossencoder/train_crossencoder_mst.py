@@ -323,7 +323,7 @@ def get_biencoder_nns(bi_reranker, pickle_src_path, entity_dictionary, entity_di
     else:
         logger.info('Biencoder: Embedding and indexing valid data')
         if use_types:
-            if dict_embeddings is not None:
+            if dict_embeddings is None:
                 dict_embeddings, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(
                     bi_reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_dictionary,
                     force_exact_search=True, batch_size=params['embed_batch_size'])
@@ -331,7 +331,7 @@ def get_biencoder_nns(bi_reranker, pickle_src_path, entity_dictionary, entity_di
                 bi_reranker, valid_men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=valid_processed_data,
                 force_exact_search=True, batch_size=params['embed_batch_size'])
         else:
-            if dict_embeddings is not None:
+            if dict_embeddings is None:
                 dict_embeddings, dict_index = data_process.embed_and_index(bi_reranker, entity_dict_vecs,
                                                                            encoder_type="candidate", n_gpu=n_gpu,
                                                                            force_exact_search=True,
@@ -347,14 +347,10 @@ def get_biencoder_nns(bi_reranker, pickle_src_path, entity_dictionary, entity_di
         if not use_types:
             _, bi_dict_nns_np = dict_index.search(valid_men_embeddings, k_dict_nns)
             _, bi_men_nns_np = valid_men_index.search(valid_men_embeddings, k_men_nns+1)
-            # bi_dict_nns, bi_men_nns = {}, {}
             for i in range(len(bi_men_nns_np)):
                 bi_dict_nns[i] = bi_dict_nns_np[i]
                 bi_men_nns[i] = bi_men_nns_np[i][bi_men_nns_np[i] != i][:k_men_nns]
         else:
-            # # It's possible that the type-specific instances are less in number than our search-k
-            # # Therefore, using dicts for the variable lengths
-            # bi_dict_nns, bi_men_nns = {}, {}
             for entity_type in valid_men_indexes:
                 men_embeds_by_type = valid_men_embeddings[valid_men_idxs_by_type[entity_type]]
                 _, dict_nns_by_type = dict_indexes[entity_type].search(men_embeds_by_type, k_dict_nns)
