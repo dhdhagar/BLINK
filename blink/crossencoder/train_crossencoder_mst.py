@@ -12,6 +12,7 @@ import time
 import pickle
 import math
 import json
+import copy
 
 import numpy as np
 import torch
@@ -741,7 +742,9 @@ def main(params):
     use_types = params["use_types"]
 
     # Bi-encoder model
-    bi_reranker = BiEncoderRanker(params)
+    biencoder_params = copy.deepcopy(params)
+    biencoder_params['add_linear'] = False
+    bi_reranker = BiEncoderRanker(biencoder_params)
     bi_tokenizer = bi_reranker.tokenizer
     bi_knn = params["bi_knn"]  # Number of biencoder nearest-neighbors to fetch for cross-encoder scoring (default: 64)
 
