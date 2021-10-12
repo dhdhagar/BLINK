@@ -1063,6 +1063,11 @@ def main(params):
                 best_score[mode]['k'] = eval_accuracy[f'{mode}_k']
         logger.info("\n")
 
+        if params["checkpoint_epoch_data"] and epoch_idx < params["num_train_epochs"] - 1:
+            if os.path.isfile(checkpoint_pkl_path):
+                logger.info("Clearing stored epoch checkpoint data...")
+                os.remove(checkpoint_pkl_path)
+
     execution_time = (time.time() - time_start) / 60
     logger.info("The training took {} minutes".format(execution_time))
     logger.info("Best performance:")
