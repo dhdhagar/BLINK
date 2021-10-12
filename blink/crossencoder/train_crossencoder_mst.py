@@ -733,6 +733,7 @@ def main(params):
     # Parameter initializations
     logger = utils.get_logger(params["output_path"])
     debug = params["debug"]
+    global SCORING_BATCH_SIZE
     SCORING_BATCH_SIZE = params["scoring_batch_size"]
     model_output_path = params["output_path"]
     if not os.path.exists(model_output_path):
