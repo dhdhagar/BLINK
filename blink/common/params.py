@@ -314,6 +314,10 @@ class BlinkParser(argparse.ArgumentParser):
             "--skip_initial_eval", action="store_true",
             help="Skip model evaluation before the start of training",
         )
+        parser.add_argument(
+            "--checkpoint_epoch_data", action="store_true",
+            help="Whether to store per epoch data as a checkpoint file. For quicker debugging.",
+        )
 
     def add_eval_args(self, args=None):
         """
