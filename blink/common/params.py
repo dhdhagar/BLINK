@@ -318,6 +318,13 @@ class BlinkParser(argparse.ArgumentParser):
             "--checkpoint_epoch_data", action="store_true",
             help="Whether to store per epoch data as a checkpoint file. For quicker debugging.",
         )
+        parser.add_argument(
+            "--biencoder_indices_path",
+            default=None,
+            type=str,
+            help="Directory from which to store/load nearest biencoder indices for cross-encoder training.",
+        )
+
 
     def add_eval_args(self, args=None):
         """

@@ -226,7 +226,7 @@ def get_scheduler(params, optimizer, len_train_data, logger):
     return scheduler
 
 
-def get_biencoder_nns(bi_reranker, pickle_src_path, entity_dictionary, entity_dict_vecs, train_men_vecs,
+def get_biencoder_nns(bi_reranker, biencoder_indices_path, entity_dictionary, entity_dict_vecs, train_men_vecs,
                       train_processed_data, train_gold_clusters, valid_men_vecs, valid_processed_data,
                       use_types, logger, n_gpu, params):
     """
@@ -249,7 +249,7 @@ def get_biencoder_nns(bi_reranker, pickle_src_path, entity_dictionary, entity_di
 
     if not params["only_evaluate"]:
         # Train set
-        biencoder_train_idxs_pkl_path = os.path.join(pickle_src_path, 'biencoder_train_idxs.pickle')
+        biencoder_train_idxs_pkl_path = os.path.join(biencoder_indices_path, 'biencoder_train_idxs.pickle')
         if os.path.isfile(biencoder_train_idxs_pkl_path):
             logger.info("Loading stored sorted biencoder train indices...")
             with open(biencoder_train_idxs_pkl_path, 'rb') as read_handle:
@@ -316,7 +316,7 @@ def get_biencoder_nns(bi_reranker, pickle_src_path, entity_dictionary, entity_di
             logger.info("Biencoder: Saved")
 
     # Dev set
-    biencoder_valid_idxs_pkl_path = os.path.join(pickle_src_path, 'biencoder_valid_idxs.pickle')
+    biencoder_valid_idxs_pkl_path = os.path.join(biencoder_indices_path, 'biencoder_valid_idxs.pickle')
     if os.path.isfile(biencoder_valid_idxs_pkl_path):
         logger.info("Loading stored sorted biencoder dev indices...")
         with open(biencoder_valid_idxs_pkl_path, 'rb') as read_handle:
@@ -738,6 +738,11 @@ def main(params):
     pickle_src_path = params["pickle_src_path"]
     if pickle_src_path is None or not os.path.exists(pickle_src_path):
         pickle_src_path = model_output_path
+    biencoder_indices_path = params["biencoder_indices_path"]
+    if biencoder_indices_path is None:
+        biencoder_indices_path = model_output_path
+    elif not os.path.exists(biencoder_indices_path):
+        os.makedirs(biencoder_indices_path)
     knn = params["knn"]  # Number of (positive+negatives) in each row of the training batch
     use_types = params["use_types"]
 
@@ -817,7 +822,7 @@ def main(params):
 
     if params["only_evaluate"]:
         _, biencoder_valid_idxs = get_biencoder_nns(bi_reranker=bi_reranker,
-                                                    pickle_src_path=pickle_src_path,
+                                                    biencoder_indices_path=biencoder_indices_path,
                                                     entity_dictionary=entity_dictionary,
                                                     entity_dict_vecs=entity_dict_vecs,
                                                     train_men_vecs=None,
@@ -853,7 +858,7 @@ def main(params):
     # Get indices of nearest mentions and entities from the trained biencoder
     # (to reduce candidates to score by cross-encoder)
     biencoder_train_idxs, biencoder_valid_idxs = get_biencoder_nns(bi_reranker=bi_reranker,
-                                                                   pickle_src_path=pickle_src_path,
+                                                                   biencoder_indices_path=biencoder_indices_path,
                                                                    entity_dictionary=entity_dictionary,
                                                                    entity_dict_vecs=entity_dict_vecs,
                                                                    train_men_vecs=train_men_vecs,
@@ -883,6 +888,7 @@ def main(params):
     logger.info('Done')
 
     if not params["skip_initial_eval"]:
+        logger.info("Evaluating dev set on untrained model...")
         # Evaluate cross-encoder before training
         evaluate(cross_reranker,
                  max_context_length,
@@ -910,7 +916,7 @@ def main(params):
     utils.write_to_file(
         os.path.join(model_output_path, "training_params.txt"), str(params)
     )
-    checkpoint_pkl_path = os.path.join(pickle_src_path, 'epoch_checkpoint.pickle')
+    checkpoint_pkl_path = os.path.join(model_output_path, 'epoch_checkpoint.pickle')
     logger.info("Starting training")
     logger.info(
         "device: {} n_gpu: {}, data_parallel: {}".format(device, n_gpu, params["data_parallel"])
@@ -933,7 +939,7 @@ def main(params):
     n_knn_ent_negs, n_knn_men_negs = n_knn_negs // 2, n_knn_negs // 2
 
     for epoch_idx in range(params["num_train_epochs"]):
-        logger.info(f"***** Starting EPOCH {epoch_idx} *****")
+        logger.info(f"***** Starting EPOCH {epoch_idx}/{params['num_train_epochs']-1} *****")
         torch.cuda.empty_cache()
 
         checkpoint_data = None
@@ -1044,7 +1050,7 @@ def main(params):
         epoch_output_folder_path = os.path.join(
             model_output_path, "epoch_{}".format(epoch_idx)
         )
-        utils.save_model(cross_model, cross_tokenizer, epoch_output_folder_path)
+        utils.save_model(cross_model, cross_tokenizer, epoch_output_folder_path) # TODO: Add optimizer and scheduler
         logger.info(f"Model saved at {epoch_output_folder_path}")
 
         eval_accuracy = evaluate(cross_reranker,
