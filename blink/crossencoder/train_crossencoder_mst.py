@@ -339,7 +339,7 @@ def get_biencoder_nns(bi_reranker, biencoder_indices_path, entity_dictionary, en
                                                                            batch_size=params['embed_batch_size'])
             valid_men_embeddings, valid_men_index = data_process.embed_and_index(bi_reranker, valid_men_vecs,
                 encoder_type="context", n_gpu=n_gpu, force_exact_search=True, batch_size=params['embed_batch_size'])
-        valid_men_embeddings = valid_men_embeddings.numpy()
+        # valid_men_embeddings = valid_men_embeddings.numpy()
         logger.info('Biencoder: Embedding and indexing finished')
 
         logger.info("Biencoder: Finding nearest mentions and entities for each mention...")
