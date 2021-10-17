@@ -488,7 +488,8 @@ def main(params):
                         to_men_data = train_men_embeddings[cluster_mens] @ train_men_embeddings[cluster_mens].T
 
                         if gold_arbo_knn is not None:
-                            sortv, sorti = torch.sort(to_men_data, descending=True)
+                            sorti = np.argsort(-to_men_data, axis=1)
+                            sortv = np.take_along_axis(to_men_data, sorti, axis=1)
                             if params["rand_gold_arbo"]:
                                 randperm = torch.randperm(sorti.size(1))
                                 sortv, sorti = sortv[:, randperm], sorti[:, randperm]
