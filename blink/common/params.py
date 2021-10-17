@@ -307,7 +307,7 @@ class BlinkParser(argparse.ArgumentParser):
             help="Number of k-NN edges to use per gold cluster to compute aroborescences for gold links",
         )
         parser.add_argument(
-            "--rand_gold_arbo", type="store_true",
+            "--rand_gold_arbo", action="store_true",
             help="Whether to randomize selection of mention NNs for gold arbo approximation",
         )
         parser.add_argument(
