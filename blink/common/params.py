@@ -303,8 +303,12 @@ class BlinkParser(argparse.ArgumentParser):
             help="Number of biencoder nearest-neighbors to fetch for cross-encoder scoring",
         )
         parser.add_argument(
-            "--gold_arbo_knn", type=int, default=64,
+            "--gold_arbo_knn", type=int,
             help="Number of k-NN edges to use per gold cluster to compute aroborescences for gold links",
+        )
+        parser.add_argument(
+            "--rand_gold_arbo", type="store_true",
+            help="Whether to randomize selection of mention NNs for gold arbo approximation",
         )
         parser.add_argument(
             "--scoring_batch_size", type=int, default=64,
