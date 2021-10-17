@@ -166,6 +166,7 @@ def main(params):
 
     knn = params["knn"]
     use_types = params["use_types"]
+    gold_arbo_knn = params["gold_arbo_knn"]
 
     # Init model
     reranker = BiEncoderRanker(params)
@@ -371,7 +372,6 @@ def main(params):
         model.train()
         torch.cuda.empty_cache()
         tr_loss = 0
-        results = None
 
         # Check if embeddings and index can be loaded
         init_run_data_loaded = False
@@ -486,26 +486,49 @@ def main(params):
                         to_ent_data = train_men_embeddings[cluster_mens] @ train_dict_embeddings[cluster_ent].T
 
                         to_men_data = train_men_embeddings[cluster_mens] @ train_men_embeddings[cluster_mens].T
-                        
+
+                        if gold_arbo_knn is not None:
+                            sortv, sorti = torch.sort(to_men_data, descending=True)
+                            if params["rand_gold_arbo"]:
+                                randperm = torch.randperm(sorti.size(1))
+                                sortv, sorti = sortv[:, randperm], sorti[:, randperm]
+
                         for i in range(len(cluster_mens)):
                             from_node = n_entities + cluster_mens[i]
                             to_node = cluster_ent
                             # Add mention-entity link
                             rows.append(from_node)
                             cols.append(to_node)
-                            # data.append(-1 * train_men_embeddings[from_node - n_entities] @ train_dict_embeddings[to_node])
                             data.append(-1 * to_ent_data[i])
-                            # Add forward and reverse mention-mention links
-                            for j in range(i+1, len(cluster_mens)):
-                                to_node = n_entities + cluster_mens[j]
-                                if (from_node, to_node) not in seen:
-                                    # score = train_men_embeddings[from_node - n_entities] @ train_men_embeddings[to_node - n_entities]
-                                    score = to_men_data[i,j]
-                                    rows.append(from_node)
-                                    cols.append(to_node)
-                                    data.append(-1 * score) # Negatives needed for SciPy's Minimum Spanning Tree computation
-                                    seen.add((from_node, to_node))
-                                    seen.add((to_node, from_node))
+                            if gold_arbo_knn is None:
+                                # Add forward and reverse mention-mention links over the entire MST
+                                for j in range(i+1, len(cluster_mens)):
+                                    to_node = n_entities + cluster_mens[j]
+                                    if (from_node, to_node) not in seen:
+                                        score = to_men_data[i,j]
+                                        rows.append(from_node)
+                                        cols.append(to_node)
+                                        data.append(-1 * score) # Negatives needed for SciPy's Minimum Spanning Tree computation
+                                        seen.add((from_node, to_node))
+                                        seen.add((to_node, from_node))
+                            else:
+                                # Approximate the MST using <gold_arbo_knn> nearest mentions from the gold cluster
+                                added = 0
+                                approx_k = min(gold_arbo_knn+1, len(cluster_mens))
+                                for j in range(approx_k):
+                                    if added == approx_k - 1:
+                                        break
+                                    to_node = n_entities + cluster_mens[sorti[i, j]]
+                                    if to_node == from_node:
+                                        continue
+                                    added += 1
+                                    if (from_node, to_node) not in seen:
+                                        score = sortv[i, j]
+                                        rows.append(from_node)
+                                        cols.append(to_node)
+                                        data.append(
+                                            -1 * score)  # Negatives needed for SciPy's Minimum Spanning Tree computation
+                                        seen.add((from_node, to_node))
 
                     # Find MST with entity constraint
                     csr = csr_matrix((data, (rows, cols)), shape=shape)

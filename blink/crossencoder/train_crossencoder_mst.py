@@ -962,7 +962,7 @@ def main(params):
                                              train_processed_data,
                                              biencoder_train_idxs['men_gold_nns'],
                                              max_seq_length,
-                                             knn=params["gold_arbo_knn"],
+                                             knn=params.get("gold_arbo_knn", 1),
                                              debug=debug)
             logger.info("Done")
 
