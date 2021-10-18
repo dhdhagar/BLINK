@@ -88,7 +88,9 @@ class BiEncoderRanker(torch.nn.Module):
         # init model
         self.build_model()
         # Path to pytorch_model.bin for the biencoder model (not the pre-trained BERT model)
-        model_path = params.get("path_to_biencoder_model", params.get("path_to_model", None))
+        model_path = params.get("path_to_biencoder_model")
+        if model_path is None:
+            model_path = params.get("path_to_model")
         if model_path is not None:
             self.load_model(model_path)
         self.model = self.model.to(self.device)
