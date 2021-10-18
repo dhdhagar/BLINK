@@ -128,9 +128,7 @@ class BlinkParser(argparse.ArgumentParser):
         )
         parser.add_argument(
             "--path_to_biencoder_model",
-            default=None,
             type=str,
-            required=False,
             help="The full path to the bi-encoder model to load for cross-encoder candidate generation.",
         )
         parser.add_argument(
