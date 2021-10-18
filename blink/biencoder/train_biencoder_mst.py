@@ -491,7 +491,7 @@ def main(params):
                             sorti = np.argsort(-to_men_data, axis=1)
                             sortv = np.take_along_axis(to_men_data, sorti, axis=1)
                             if params["rand_gold_arbo"]:
-                                randperm = torch.randperm(sorti.size(1))
+                                randperm = np.random.permutation(sorti.shape[1])
                                 sortv, sorti = sortv[:, randperm], sorti[:, randperm]
 
                         for i in range(len(cluster_mens)):
