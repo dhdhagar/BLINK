@@ -129,6 +129,7 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
     logger.info(f"Eval: Best accuracy: {max_eval_acc}%")
     return max_eval_acc, {'dict_embeds': dict_embeds, 'dict_indexes': dict_indexes, 'dict_idxs_by_type': dict_idxs_by_type} if use_types else {'dict_embeds': dict_embeds, 'dict_index': dict_index}
 
+
 def get_optimizer(model, params):
     return get_bert_optimizer(
         [model],
@@ -152,6 +153,18 @@ def get_scheduler(params, optimizer, len_train_data, logger):
     logger.info(" Num optimization steps = %d" % num_train_steps)
     logger.info(" Num warmup steps = %d", num_warmup_steps)
     return scheduler
+
+
+def load_optimizer_scheduler(params, logger):
+    optim_sched = None
+    model_path = params["path_to_model"]
+    if model_path is not None:
+        model_dir = os.path.dirname(model_path)
+        optim_sched_fpath = os.path.join(model_dir, utils.OPTIM_SCHED_FNAME)
+        if os.path.isfile(optim_sched_fpath):
+            logger.info(f'Loading stored optimizer and scheduler from {optim_sched_fpath}')
+            optim_sched = torch.load(optim_sched_fpath)
+    return optim_sched
 
 
 def main(params):
@@ -357,8 +370,14 @@ def main(params):
     )
 
     # Set model to training mode
-    optimizer = get_optimizer(model, params)
-    scheduler = get_scheduler(params, optimizer, len(train_tensor_data), logger)
+    optim_sched, optimizer, scheduler = load_optimizer_scheduler(params, logger), None, None
+    if optim_sched is None:
+        optimizer = get_optimizer(model, params)
+        scheduler = get_scheduler(params, optimizer, len(train_tensor_data), logger)
+    else:
+        optimizer = optim_sched['optimizer']
+        scheduler = optim_sched['scheduler']
+
     best_epoch_idx = -1
     best_score = -1
     num_train_epochs = params["num_train_epochs"]
@@ -628,7 +647,7 @@ def main(params):
         epoch_output_folder_path = os.path.join(
             model_output_path, "epoch_{}".format(epoch_idx)
         )
-        utils.save_model(model, tokenizer, epoch_output_folder_path)
+        utils.save_model(model, tokenizer, epoch_output_folder_path, scheduler, optimizer)
         logger.info(f"Model saved at {epoch_output_folder_path}")
 
         eval_accuracy, dict_embed_data = evaluate(
@@ -654,7 +673,7 @@ def main(params):
     params["path_to_model"] = os.path.join(
         model_output_path, "epoch_{}".format(best_epoch_idx)
     )
-    utils.save_model(reranker.model, tokenizer, model_output_path)
+    utils.save_model(reranker.model, tokenizer, model_output_path, scheduler, optimizer)
     logger.info(f"Best model saved at {model_output_path}")
 
 

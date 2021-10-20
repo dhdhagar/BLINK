@@ -226,6 +226,18 @@ def get_scheduler(params, optimizer, len_train_data, logger):
     return scheduler
 
 
+def load_optimizer_scheduler(params, logger):
+    optim_sched = None
+    model_path = params["path_to_model"]
+    if model_path is not None:
+        model_dir = os.path.dirname(model_path)
+        optim_sched_fpath = os.path.join(model_dir, utils.OPTIM_SCHED_FNAME)
+        if os.path.isfile(optim_sched_fpath):
+            logger.info(f'Loading stored optimizer and scheduler from {optim_sched_fpath}')
+            optim_sched = torch.load(optim_sched_fpath)
+    return optim_sched
+
+
 def get_biencoder_nns(bi_reranker, biencoder_indices_path, entity_dictionary, entity_dict_vecs, train_men_vecs,
                       train_processed_data, train_gold_clusters, valid_men_vecs, valid_processed_data,
                       use_types, logger, n_gpu, params):
@@ -667,13 +679,11 @@ def build_cross_concat_input(biencoder_idxs,
         # Get nearest biencoder mentions and entities
         bi_men_idxs = biencoder_idxs['men_nns'][mention_idx][:k_biencoder]
         bi_ent_idxs = biencoder_idxs['dict_nns'][mention_idx][:k_biencoder]
-        # bi_men_inputs = torch.unsqueeze(torch.tensor(list(map(lambda x: men_vecs[x].numpy(), bi_men_idxs))), dim=0)
         bi_men_inputs = None
         for bi_men_idx in bi_men_idxs:
             bi_men_inputs = men_vecs[bi_men_idx].unsqueeze(dim=0) if bi_men_inputs is None else \
                 torch.cat((bi_men_inputs, men_vecs[bi_men_idx].unsqueeze(dim=0)), dim=0)
         bi_men_inputs = torch.unsqueeze(bi_men_inputs, dim=0)
-        # bi_ent_inputs = torch.unsqueeze(torch.tensor(list(map(lambda x: entity_dict_vecs[x].numpy(), bi_ent_idxs))), dim=0)
         bi_ent_inputs = None
         for bi_ent_idx in bi_ent_idxs:
             bi_ent_inputs = entity_dict_vecs[bi_ent_idx].unsqueeze(dim=0) if bi_ent_inputs is None else \
@@ -921,8 +931,15 @@ def main(params):
     logger.info(
         "device: {} n_gpu: {}, data_parallel: {}".format(device, n_gpu, params["data_parallel"])
     )
-    optimizer = get_optimizer(cross_model, params)
-    scheduler = get_scheduler(params, optimizer, len(train_tensor_data), logger)
+
+    optim_sched, optimizer, scheduler = load_optimizer_scheduler(params, logger), None, None
+    if optim_sched is None:
+        optimizer = get_optimizer(cross_model, params)
+        scheduler = get_scheduler(params, optimizer, len(train_tensor_data), logger)
+    else:
+        optimizer = optim_sched['optimizer']
+        scheduler = optim_sched['scheduler']
+
     best_score = {
         'directed': {
             'acc': -1.,
@@ -1050,7 +1067,7 @@ def main(params):
         epoch_output_folder_path = os.path.join(
             model_output_path, "epoch_{}".format(epoch_idx)
         )
-        utils.save_model(cross_model, cross_tokenizer, epoch_output_folder_path) # TODO: Add optimizer and scheduler
+        utils.save_model(cross_model, cross_tokenizer, epoch_output_folder_path, scheduler, optimizer)
         logger.info(f"Model saved at {epoch_output_folder_path}")
 
         eval_accuracy = evaluate(cross_reranker,
