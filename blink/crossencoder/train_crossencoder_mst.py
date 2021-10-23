@@ -1048,20 +1048,21 @@ def main(params):
                 scheduler.step()
                 optimizer.zero_grad()
 
-            if (step + 1) % (params["eval_interval"] * grad_acc_steps) == 0:
-                logger.info("Evaluation on the dev set")
-                evaluate(cross_reranker,
-                         max_context_length,
-                         entity_dictionary,
-                         valid_processed_data,
-                         biencoder_valid_idxs,
-                         valid_men_concat_inputs,
-                         valid_ent_concat_inputs,
-                         logger,
-                         max_k=8,
-                         k_biencoder=64)
-                cross_model.train()
-                logger.info("\n")
+            if params["eval_interval"] != -1:
+                if (step + 1) % (params["eval_interval"] * grad_acc_steps) == 0:
+                    logger.info("Evaluation on the dev set")
+                    evaluate(cross_reranker,
+                             max_context_length,
+                             entity_dictionary,
+                             valid_processed_data,
+                             biencoder_valid_idxs,
+                             valid_men_concat_inputs,
+                             valid_ent_concat_inputs,
+                             logger,
+                             max_k=8,
+                             k_biencoder=64)
+                    cross_model.train()
+                    logger.info("\n")
 
         logger.info("***** Saving fine-tuned model *****")
         epoch_output_folder_path = os.path.join(
