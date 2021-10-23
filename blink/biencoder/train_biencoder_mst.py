@@ -686,18 +686,19 @@ def main(params):
                 scheduler.step()
                 optimizer.zero_grad()
 
-            if (step + 1) % (params["eval_interval"] * grad_acc_steps) == 0:
-                logger.info("Evaluation on the development dataset")
-                evaluate(
-                    reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu,
-                    entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"],
-                    use_types=use_types or params["use_types_for_eval"], embed_batch_size=params["embed_batch_size"],
-                    force_exact_search=use_types or params["use_types_for_eval"] or params["force_exact_search"],
-                    probe_mult_factor=params['probe_mult_factor'], within_doc=within_doc,
-                    context_doc_ids=valid_context_doc_ids
-                )
-                model.train()
-                logger.info("\n")
+            if params["eval_interval"] != -1:
+                if (step + 1) % (params["eval_interval"] * grad_acc_steps) == 0:
+                    logger.info("Evaluation on the development dataset")
+                    evaluate(
+                        reranker, entity_dict_vecs, valid_men_vecs, device=device, logger=logger, knn=knn, n_gpu=n_gpu,
+                        entity_data=entity_dictionary, query_data=valid_processed_data, silent=params["silent"],
+                        use_types=use_types or params["use_types_for_eval"], embed_batch_size=params["embed_batch_size"],
+                        force_exact_search=use_types or params["use_types_for_eval"] or params["force_exact_search"],
+                        probe_mult_factor=params['probe_mult_factor'], within_doc=within_doc,
+                        context_doc_ids=valid_context_doc_ids
+                    )
+                    model.train()
+                    logger.info("\n")
 
         logger.info("***** Saving fine-tuned model *****")
         epoch_output_folder_path = os.path.join(
