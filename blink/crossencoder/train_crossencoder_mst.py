@@ -995,7 +995,7 @@ def main(params):
                                                                                   debug=debug)
             logger.info("Done")
 
-        if params["checkpoint_epoch_data"]:
+        if params["checkpoint_epoch_data"] and checkpoint_data is None:
             logger.info("Checkpointing epoch data...")
             with open(checkpoint_pkl_path, 'wb') as write_handle:
                 pickle.dump({

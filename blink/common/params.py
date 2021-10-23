@@ -326,6 +326,10 @@ class BlinkParser(argparse.ArgumentParser):
             type=str,
             help="Directory from which to store/load nearest biencoder indices for cross-encoder training.",
         )
+        parser.add_argument(
+            "--within_doc", action="store_true",
+            help="Whether to restrict mention-mention relationships to within the same context document.",
+        )
 
 
     def add_eval_args(self, args=None):
@@ -431,6 +435,10 @@ class BlinkParser(argparse.ArgumentParser):
         parser.add_argument(
             "--drop_all_entities", action="store_true",
             help="Whether to run the discovery without any entities (usually for baseline)",
+        )
+        parser.add_argument(
+            "--within_doc", action="store_true",
+            help="Whether to restrict mention-mention relationships to within the same context document.",
         )
 
     def add_joint_train_args(self, args=None):
