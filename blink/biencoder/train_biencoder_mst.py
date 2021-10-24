@@ -17,6 +17,7 @@ from tqdm import tqdm, trange
 from special_partition.special_partition import cluster_linking_partition
 from scipy.sparse.csgraph import minimum_spanning_tree
 from scipy.sparse import csr_matrix
+from collections import Counter
 
 import blink.biencoder.data_process_mult as data_process
 import blink.biencoder.eval_cluster_linking as eval_cluster_linking
@@ -374,6 +375,9 @@ def main(params):
         if train_samples is None:
             train_samples, _ = read_data("train", params, logger)
         train_context_doc_ids = [s['context_doc_id'] for s in train_samples]
+        counts = Counter(train_context_doc_ids)
+        min_mens_within_doc = min(counts, key=counts.get)
+        logger.info(f"Minimum count of mentions within document = {min_mens_within_doc}")
         if valid_samples is None:
             valid_samples, _ = read_data("valid", params, logger)
         valid_context_doc_ids = [s['context_doc_id'] for s in train_samples]
@@ -526,7 +530,9 @@ def main(params):
             positive_idxs = []
             negative_dict_inputs = []
             negative_men_inputs = []
-            
+
+            min_neg_mens = float('inf')
+            skipped = 0
             for m_embed_idx, m_embed in enumerate(mention_embeddings):
                 mention_idx = int(mention_idxs[m_embed_idx])
                 gold_idxs = set(train_processed_data[mention_idx]['label_idxs'][:n_gold[m_embed_idx]])
@@ -633,15 +639,32 @@ def main(params):
                     knn_men_idxs, _ = filter_by_context_doc_id(knn_men_idxs,
                                                                train_context_doc_ids[mention_idx],
                                                                train_context_doc_ids, return_numpy=True)
+                # Add the negative examples
+                neg_mens = list(knn_men_idxs[~np.isin(knn_men_idxs, np.concatenate([train_gold_clusters[gi] for gi in gold_idxs]))][:knn_men])
+                if len(neg_mens) == 0:
+                    skipped += 1
+                    continue
+                else:
+                    min_neg_mens = min(min_neg_mens, len(neg_mens))
+                negative_men_inputs.append(knn_men_idxs[~np.isin(knn_men_idxs, np.concatenate([train_gold_clusters[gi] for gi in gold_idxs]))][:knn_men])
+                negative_dict_inputs += list(knn_dict_idxs[~np.isin(knn_dict_idxs, list(gold_idxs))][:knn_dict])
                 # Add the positive example
                 positive_idxs.append(gold_link_idx)
-                # Add the negative examples
-                negative_dict_inputs += list(knn_dict_idxs[~np.isin(knn_dict_idxs, list(gold_idxs))][:knn_dict])
-                negative_men_inputs += list(knn_men_idxs[~np.isin(knn_men_idxs, np.concatenate([train_gold_clusters[gi] for gi in gold_idxs]))][:knn_men])
-            
+
+            if len(negative_men_inputs) == 0:
+                continue
+
+            knn_men = min_neg_mens
+            filtered_negative_men_inputs = []
+            for row in negative_men_inputs:
+                filtered_negative_men_inputs += list(row[:knn_men])
+            negative_men_inputs = filtered_negative_men_inputs
+
             assert len(negative_dict_inputs) == len(mention_embeddings) * knn_dict
             assert len(negative_men_inputs) == len(mention_embeddings) * knn_men
             
+            logger.info(f"Skipped training queries = {skipped}, negative mentions in batch = {knn_men}")
+
             negative_dict_inputs = torch.tensor(list(map(lambda x: entity_dict_vecs[x].numpy(), negative_dict_inputs)))
             negative_men_inputs = torch.tensor(list(map(lambda x: train_men_vecs[x].numpy(), negative_men_inputs)))
             positive_embeds = []
