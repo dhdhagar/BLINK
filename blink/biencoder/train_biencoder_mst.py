@@ -713,7 +713,7 @@ def main(params):
                             train_men_vecs[pos_idx - n_entities:pos_idx - n_entities + 1].cuda(), requires_grad=True)
                     skipped_positive_embeds.append(pos_embed)
                 skipped_positive_embeds = torch.cat(skipped_positive_embeds)
-                skipped_context_inputs = batch_context_inputs[~context_inputs_mask]
+                skipped_context_inputs = batch_context_inputs[~np.array(context_inputs_mask)]
                 skipped_context_inputs = skipped_context_inputs.cuda()
                 skipped_label_inputs = torch.tensor([[1] + [0] * (knn_dict)] * len(skipped_context_inputs),
                                             dtype=torch.float32).cuda()
