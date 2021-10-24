@@ -71,9 +71,9 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
         nn_ent_dists, nn_ent_idxs = dict_index.search(men_embeds, 1)
         nn_men_dists, nn_men_idxs = men_index.search(men_embeds, n_men_to_fetch)
     else:
-        nn_ent_idxs = -1 * np.ones((len(men_embeds), 1))
+        nn_ent_idxs = -1 * np.ones((len(men_embeds), 1), dtype=int)
         nn_ent_dists = -1 * np.ones((len(men_embeds), 1), dtype='float64')
-        nn_men_idxs = -1 * np.ones((len(men_embeds), n_men_to_fetch))
+        nn_men_idxs = -1 * np.ones((len(men_embeds), n_men_to_fetch), dtype=int)
         nn_men_dists = -1 * np.ones((len(men_embeds), n_men_to_fetch), dtype='float64')
         for entity_type in men_indexes:
             men_embeds_by_type = men_embeds[men_idxs_by_type[entity_type]]
@@ -100,7 +100,7 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
         men_cand_scores = nn_men_dists[men_query_idx][filter_mask_neg1]
 
         if within_doc:
-            men_cand_idxs, wd_mask = filter_by_context_doc_id(men_cand_idxs,
+            men_cand_idxs, wd_mask = filter_by_context_doc_id(men_cand_idxs.astype(),
                                                               context_doc_ids[men_query_idx],
                                                               context_doc_ids, return_numpy=True)
             men_cand_scores = men_cand_scores[wd_mask]
