@@ -533,6 +533,7 @@ def main(params):
 
             min_neg_mens = float('inf')
             skipped = 0
+            context_inputs_mask = [True]*len(context_inputs)
             for m_embed_idx, m_embed in enumerate(mention_embeddings):
                 mention_idx = int(mention_idxs[m_embed_idx])
                 gold_idxs = set(train_processed_data[mention_idx]['label_idxs'][:n_gold[m_embed_idx]])
@@ -642,6 +643,7 @@ def main(params):
                 # Add the negative examples
                 neg_mens = list(knn_men_idxs[~np.isin(knn_men_idxs, np.concatenate([train_gold_clusters[gi] for gi in gold_idxs]))][:knn_men])
                 if len(neg_mens) == 0:
+                    context_inputs_mask[m_embed_idx] = False
                     skipped += 1
                     continue
                 else:
@@ -675,6 +677,7 @@ def main(params):
                     pos_embed = reranker.encode_context(train_men_vecs[pos_idx - n_entities:pos_idx - n_entities + 1].cuda(), requires_grad=True)
                 positive_embeds.append(pos_embed)
             positive_embeds = torch.cat(positive_embeds)
+            context_inputs = context_inputs[context_inputs_mask]
             context_inputs = context_inputs.cuda()
             label_inputs = torch.tensor([[1]+[0]*(knn_dict+knn_men)]*len(context_inputs), dtype=torch.float32).cuda()
             
