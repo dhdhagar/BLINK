@@ -660,8 +660,8 @@ def main(params):
                 filtered_negative_men_inputs += list(row[:knn_men])
             negative_men_inputs = filtered_negative_men_inputs
 
-            assert len(negative_dict_inputs) == len(mention_embeddings) * knn_dict
-            assert len(negative_men_inputs) == len(mention_embeddings) * knn_men
+            assert len(negative_dict_inputs) == (len(mention_embeddings) - skipped) * knn_dict
+            assert len(negative_men_inputs) == (len(mention_embeddings) - skipped) * knn_men
             
             logger.info(f"Skipped training queries = {skipped}, negative mentions in batch = {knn_men}")
 
