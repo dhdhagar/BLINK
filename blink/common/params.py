@@ -330,6 +330,10 @@ class BlinkParser(argparse.ArgumentParser):
             "--within_doc", action="store_true",
             help="Whether to restrict mention-mention relationships to within the same context document.",
         )
+        parser.add_argument(
+            "--within_doc_skip_strategy", action="store_true",
+            help="For training mentions without valid mention negatives, whether to skip them in training or train with only entity negatives.",
+        )
 
 
     def add_eval_args(self, args=None):
