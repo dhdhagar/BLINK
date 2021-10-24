@@ -375,9 +375,6 @@ def main(params):
         if train_samples is None:
             train_samples, _ = read_data("train", params, logger)
         train_context_doc_ids = [s['context_doc_id'] for s in train_samples]
-        counts = Counter(train_context_doc_ids)
-        min_mens_within_doc = min(counts, key=counts.get)
-        logger.info(f"Minimum count of mentions within document = {min_mens_within_doc}")
         if valid_samples is None:
             valid_samples, _ = read_data("valid", params, logger)
         valid_context_doc_ids = [s['context_doc_id'] for s in train_samples]
@@ -705,7 +702,7 @@ def main(params):
                     )
                 )
                 logger.info(
-                    f"Avg. skipped queries = {total_skipped / (params['print_interval'] * grad_acc_steps)}/{len(mention_embeddings)}, avg. negative mentions per query = {total_knn_men_negs / ((params['print_interval'] * grad_acc_steps))}/ ")
+                    f"Avg. skipped queries = {total_skipped / (params['print_interval'] * grad_acc_steps)}/{len(mention_embeddings)}, avg. negative mentions per query = {total_knn_men_negs / ((params['print_interval'] * grad_acc_steps))} ")
                 total_skipped = 0
                 total_knn_men_negs = 0
                 tr_loss = 0
