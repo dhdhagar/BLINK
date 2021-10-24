@@ -517,7 +517,10 @@ def main(params):
                     men_nns[idx][:len(men_nns_idxs[i])] = men_nns_idxs[i]
         logger.info("Search finished")
 
+        total_skipped = total_knn_men_negs = 0
+
         for step, batch in enumerate(iter_):
+            knn_men = knn - knn_dict
             batch = tuple(t.to(device) for t in batch)
             context_inputs, candidate_idxs, n_gold, mention_idxs = batch
             mention_embeddings = train_men_embeddings[mention_idxs.cpu()]
@@ -664,8 +667,9 @@ def main(params):
 
             assert len(negative_dict_inputs) == (len(mention_embeddings) - skipped) * knn_dict
             assert len(negative_men_inputs) == (len(mention_embeddings) - skipped) * knn_men
-            
-            logger.info(f"Skipped training queries = {skipped}, negative mentions in batch = {knn_men}")
+
+            total_skipped += skipped
+            total_knn_men_negs += knn_men
 
             negative_dict_inputs = torch.tensor(list(map(lambda x: entity_dict_vecs[x].numpy(), negative_dict_inputs)))
             negative_men_inputs = torch.tensor(list(map(lambda x: train_men_vecs[x].numpy(), negative_men_inputs)))
@@ -700,6 +704,10 @@ def main(params):
                         tr_loss / (params["print_interval"] * grad_acc_steps),
                     )
                 )
+                logger.info(
+                    f"Avg. skipped queries = {total_skipped / (params['print_interval'] * grad_acc_steps)}/{len(mention_embeddings)}, avg. negative mentions per query = {total_knn_men_negs / ((params['print_interval'] * grad_acc_steps))}/ ")
+                total_skipped = 0
+                total_knn_men_negs = 0
                 tr_loss = 0
 
             loss.backward()
