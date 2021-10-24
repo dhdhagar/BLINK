@@ -559,6 +559,8 @@ def get_gold_arbo_links(cross_reranker,
                         gold_men_nns,
                         max_seq_length,
                         knn,
+                        within_doc=False,
+                        train_context_doc_ids=None,
                         debug=False):
     cross_reranker.model.eval()
     with torch.no_grad():
@@ -569,9 +571,14 @@ def get_gold_arbo_links(cross_reranker,
             # Assuming that there is only 1 gold label
             cluster_ent = train_processed_data[mention_idx]['label_idxs'][0]
             if mention_idx not in gold_links:
-                # cluster_mens = train_gold_clusters[cluster_ent]
                 # Get <knn> nearest (biencoder) gold mentions
-                cluster_mens = np.concatenate(([mention_idx], gold_men_nns[gold_men_nns != -1][:knn]))
+                gold_nns = gold_men_nns[mention_idx][gold_men_nns[mention_idx] != -1]
+                if within_doc:
+                    gold_nns = filter_by_context_doc_id(gold_nns,
+                                                        train_context_doc_ids[mention_idx],
+                                                        train_context_doc_ids,
+                                                        return_numpy=True)
+                cluster_mens = np.concatenate(([mention_idx], gold_nns[:knn]))
                 # Simply link to the entity if cluster is singleton
                 if len(cluster_mens) == 1:
                     gold_links[mention_idx] = cluster_ent
@@ -606,7 +613,7 @@ def get_gold_arbo_links(cross_reranker,
                     data.append(to_ent_data[i, 0].item())
                     # Add mention-mention links
                     for j in range(len(cluster_mens)):
-                        # Skip diagonal elements from to_men_data because they are scores of elements against themselves
+                        # Skip diagonal elements from to_men_data because they are scores of elements with themselves
                         if i == j:
                             continue
                         to_node = n_entities + cluster_mens[j]
@@ -623,10 +630,13 @@ def get_gold_arbo_links(cross_reranker,
                 assert np.array_equal(np.sort(rows - n_entities), np.sort(cluster_mens))
                 for i in range(len(rows)):
                     men_idx = rows[i] - n_entities
+                    assert men_idx >= 0
                     if men_idx in gold_links:
                         continue
-                    assert men_idx >= 0
-                    gold_links[men_idx] = cols[i]
+                    # Only add gold link for current mention's arborescence computation
+                    if men_idx == mention_idx:
+                        gold_links[men_idx] = cols[i]
+                        break
     return gold_links
 
 
@@ -755,6 +765,7 @@ def main(params):
         os.makedirs(biencoder_indices_path)
     knn = params["knn"]  # Number of (positive+negatives) in each row of the training batch
     use_types = params["use_types"]
+    within_doc = params["within_doc"]
 
     # Bi-encoder model
     biencoder_params = copy.deepcopy(params)
