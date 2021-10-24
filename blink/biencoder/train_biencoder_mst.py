@@ -100,7 +100,7 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
         men_cand_scores = nn_men_dists[men_query_idx][filter_mask_neg1]
 
         if within_doc:
-            men_cand_idxs, wd_mask = filter_by_context_doc_id(men_cand_idxs.astype(),
+            men_cand_idxs, wd_mask = filter_by_context_doc_id(men_cand_idxs,
                                                               context_doc_ids[men_query_idx],
                                                               context_doc_ids, return_numpy=True)
             men_cand_scores = men_cand_scores[wd_mask]
