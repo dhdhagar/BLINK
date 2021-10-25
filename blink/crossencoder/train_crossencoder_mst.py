@@ -1082,24 +1082,25 @@ def main(params):
         utils.save_model(cross_model, cross_tokenizer, epoch_output_folder_path, scheduler, optimizer)
         logger.info(f"Model saved at {epoch_output_folder_path}")
 
-        eval_accuracy = evaluate(cross_reranker,
-                                 max_context_length,
-                                 entity_dictionary,
-                                 valid_processed_data,
-                                 biencoder_valid_idxs,
-                                 valid_men_concat_inputs,
-                                 valid_ent_concat_inputs,
-                                 logger,
-                                 max_k=8,
-                                 k_biencoder=64)
-        for mode in ['directed', 'undirected']:
-            ls = [best_score[mode]['acc'], eval_accuracy[mode]]
-            li = [best_score[mode]['epoch'], epoch_idx]
-            best_score[mode]['acc'] = ls[np.argmax(ls)]
-            best_score[mode]['epoch'] = li[np.argmax(ls)]
-            if np.argmax(ls) == 0:
-                best_score[mode]['k'] = eval_accuracy[f'{mode}_k']
-        logger.info("\n")
+        if not params["skip_epoch_eval"]:
+            eval_accuracy = evaluate(cross_reranker,
+                                     max_context_length,
+                                     entity_dictionary,
+                                     valid_processed_data,
+                                     biencoder_valid_idxs,
+                                     valid_men_concat_inputs,
+                                     valid_ent_concat_inputs,
+                                     logger,
+                                     max_k=8,
+                                     k_biencoder=64)
+            for mode in ['directed', 'undirected']:
+                ls = [best_score[mode]['acc'], eval_accuracy[mode]]
+                li = [best_score[mode]['epoch'], epoch_idx]
+                best_score[mode]['acc'] = ls[np.argmax(ls)]
+                best_score[mode]['epoch'] = li[np.argmax(ls)]
+                if np.argmax(ls) == 0:
+                    best_score[mode]['k'] = eval_accuracy[f'{mode}_k']
+            logger.info("\n")
 
         if params["checkpoint_epoch_data"] and epoch_idx < params["num_train_epochs"] - 1:
             if os.path.isfile(checkpoint_pkl_path):
