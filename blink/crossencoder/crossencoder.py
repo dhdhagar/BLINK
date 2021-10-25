@@ -220,13 +220,16 @@ class CrossEncoderRanker(torch.nn.Module):
         return embedding_ctxt.view(-1, num_cand)
 
     def forward(self, pos_scores, neg_ctxt_vecs, neg_cand_vecs, context_len):
-        labels = torch.tensor([[1] + [0] * (neg_ctxt_vecs.size(1) + neg_cand_vecs.size(1))] * len(pos_scores),
+        n_negs = neg_cand_vecs.size(1) + (0 if neg_ctxt_vecs is None else neg_ctxt_vecs.size(1))
+        labels = torch.tensor([[1] + [0] * n_negs] * len(pos_scores),
                               dtype=torch.float32).cuda()  # Shape: B x (1+knn_negs)
-        ctxt_scores = self.score_candidate(neg_ctxt_vecs, context_len,
-                                           is_context_encoder=True)  # Shape: B x knn_ctxt_negs
         cand_scores = self.score_candidate(neg_cand_vecs, context_len,
                                            is_context_encoder=False)  # Shape: B x knn_cand_negs
-        scores = torch.cat((pos_scores, ctxt_scores, cand_scores), dim=1)  # Shape: B x (1+knn_negs)
+        scores = torch.cat((pos_scores, cand_scores), dim=1)  # Shape: B x (1+knn_cand_negs)
+        if neg_ctxt_vecs is not None:
+            ctxt_scores = self.score_candidate(neg_ctxt_vecs, context_len,
+                                               is_context_encoder=True)  # Shape: B x knn_ctxt_negs
+            scores = torch.cat((scores, ctxt_scores), dim=1)  # Shape: B x (1+knn_cand_negs+knn_ctxt_negs)
         if self.pos_neg_loss:
             loss = torch.mean(torch.sum(-torch.log(torch.softmax(scores, dim=1) + 1e-8) * labels - torch.log(
                 1 - torch.softmax(scores, dim=1) + 1e-8) * (1 - labels), dim=1))
