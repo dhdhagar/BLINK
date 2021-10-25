@@ -405,10 +405,11 @@ def get_biencoder_nns(bi_reranker, biencoder_indices_path, entity_dictionary, en
             _, bi_men_nns_np = valid_men_index.search(valid_men_embeddings, n_mens_to_fetch)
             for i in range(len(bi_men_nns_np)):
                 bi_dict_nns[i] = bi_dict_nns_np[i]
+                men_nns = bi_men_nns_np[i][bi_men_nns_np[i] != i]
                 if within_doc:
-                    men_nns = filter_by_context_doc_id(bi_men_nns_np[i], valid_context_doc_ids[i], valid_context_doc_ids,
+                    men_nns = filter_by_context_doc_id(men_nns, valid_context_doc_ids[i], valid_context_doc_ids,
                                                        return_numpy=True)
-                men_nns = men_nns[men_nns != i][:k_men_nns]
+                men_nns = men_nns[:k_men_nns]
                 bi_men_nns[i][:len(men_nns)] = men_nns
         else:
             for entity_type in valid_men_indexes:
