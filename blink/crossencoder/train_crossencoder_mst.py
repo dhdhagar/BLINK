@@ -420,11 +420,12 @@ def get_biencoder_nns(bi_reranker, biencoder_indices_path, entity_dictionary, en
                 men_nns_idxs = np.array(list(map(lambda x: valid_men_idxs_by_type[entity_type][x], men_nns_by_type)))
                 for i, idx in enumerate(valid_men_idxs_by_type[entity_type]):
                     bi_dict_nns[idx] = dict_nns_idxs[i]
+                    men_nns = men_nns_idxs[i][men_nns_idxs[i] != idx]
                     if within_doc:
-                        men_nns = filter_by_context_doc_id(men_nns_idxs[i], valid_context_doc_ids[idx],
+                        men_nns = filter_by_context_doc_id(men_nns, valid_context_doc_ids[idx],
                                                            valid_context_doc_ids,
                                                            return_numpy=True)
-                    men_nns = men_nns[men_nns != idx][:k_men_nns]
+                    men_nns = men_nns[:k_men_nns]
                     bi_men_nns[idx][:len(men_nns)] = men_nns
         logger.info("Biencoder: Search finished")
 
