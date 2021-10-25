@@ -334,6 +334,10 @@ class BlinkParser(argparse.ArgumentParser):
             "--within_doc_skip_strategy", action="store_true",
             help="For training mentions without valid mention negatives, whether to skip them in training or train with only entity negatives.",
         )
+        parser.add_argument(
+            "--skip_epoch_eval", action="store_true",
+            help="Whether to skip epoch evaluations.",
+        )
 
 
     def add_eval_args(self, args=None):
