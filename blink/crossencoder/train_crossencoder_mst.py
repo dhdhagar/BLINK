@@ -93,6 +93,7 @@ def evaluate(cross_reranker,
              entity_dictionary,
              valid_processed_data,
              biencoder_valid_idxs,
+             bi_valid_nn_count,
              valid_men_inputs,
              valid_ent_inputs,
              logger,
@@ -126,6 +127,9 @@ def evaluate(cross_reranker,
         logger.info('Eval: Scoring mention-mention edges using cross-encoder...')
         cross_men_scores = score_in_batches(cross_reranker, max_context_length, valid_men_inputs,
                                             is_context_encoder=True)
+        for i in range(len(cross_men_scores)):
+            # Set scores for all invalid nearest neighbours to -infinity (due to variable NN counts of mentions)
+            cross_men_scores[i][bi_valid_nn_count[i]:] = float('-inf')
         cross_men_topk_scores, cross_men_topk_idxs = torch.sort(cross_men_scores, dim=1, descending=True)
         cross_men_topk_idxs = cross_men_topk_idxs.cpu()[:, :max_k]
         cross_men_topk_scores = cross_men_topk_scores.cpu()[:, :max_k]
@@ -150,9 +154,11 @@ def evaluate(cross_reranker,
         # Get nearest entity
         m_e_idx = bi_ent_idxs[men_idx, cross_ent_top1_idx[men_idx]]
         m_e_score = cross_ent_top1_score[men_idx]
-        # Get nearest mentions
-        m_m_idxs = bi_men_idxs[men_idx, cross_men_topk_idxs[men_idx]] + n_entities  # Mentions added at an offset of maximum entities
-        m_m_scores = cross_men_topk_scores[men_idx]
+        if bi_valid_nn_count[men_idx] > 0:
+            # Get nearest mentions
+            topk_defined_nn_idxs = cross_men_topk_idxs[men_idx][:bi_valid_nn_count[men_idx]]
+            m_m_idxs = bi_men_idxs[men_idx, topk_defined_nn_idxs] + n_entities  # Mentions added at an offset of maximum entities
+            m_m_scores = cross_men_topk_scores[men_idx][:bi_valid_nn_count[men_idx]]
         # Add edges to the graphs
         for k in joint_graphs:
             # Add mention-entity edge
@@ -162,7 +168,7 @@ def evaluate(cross_reranker,
                 joint_graphs[k]['cols'], m_e_idx)
             joint_graphs[k]['data'] = np.append(
                 joint_graphs[k]['data'], m_e_score)
-            if k > 0:
+            if k > 0 and bi_valid_nn_count[men_idx] > 0:
                 # Add mention-mention edges
                 joint_graphs[k]['rows'] = np.append(
                     joint_graphs[k]['rows'], [n_entities + men_idx] * len(m_m_idxs[:k]))
@@ -238,9 +244,30 @@ def load_optimizer_scheduler(params, logger):
     return optim_sched
 
 
+def get_context_doc_ids(split, params):
+    samples = utils.read_dataset(split, params["data_path"])
+    # Filter unlabeled data
+    has_mult_labels = "labels" in samples[0].keys()
+    samples = list(
+        filter(lambda sample: (len(sample["labels"]) > 0) if has_mult_labels else (sample["label"] is not None),
+               samples))
+    context_doc_ids = [s['context_doc_id'] for s in samples]
+    return context_doc_ids
+
+
+def filter_by_context_doc_id(mention_idxs, doc_id, doc_id_list, return_numpy=False):
+    mask = [doc_id_list[i] == doc_id for i in mention_idxs]
+    if isinstance(mention_idxs, list):
+        mention_idxs = np.array(mention_idxs)
+    mention_idxs = mention_idxs[mask]
+    if not return_numpy:
+        mention_idxs = list(mention_idxs)
+    return mention_idxs, mask
+
+
 def get_biencoder_nns(bi_reranker, biencoder_indices_path, entity_dictionary, entity_dict_vecs, train_men_vecs,
                       train_processed_data, train_gold_clusters, valid_men_vecs, valid_processed_data,
-                      use_types, logger, n_gpu, params):
+                      use_types, logger, n_gpu, params, train_context_doc_ids=None, valid_context_doc_ids=None):
     """
     Train:
         Store sorted entities and mention idxs to disk
@@ -254,10 +281,9 @@ def get_biencoder_nns(bi_reranker, biencoder_indices_path, entity_dictionary, en
     """
     dict_embeddings = None
     biencoder_train_idxs, biencoder_valid_idxs = None, None
-
     # Number of nearest neighbors to fetch and persist
     k_dict_nns, k_men_nns = 128, 128
-    # Number of nearest neighbors to requested to score
+    within_doc = params["within_doc"]
 
     if not params["only_evaluate"]:
         # Train set
@@ -283,9 +309,9 @@ def get_biencoder_nns(bi_reranker, biencoder_indices_path, entity_dictionary, en
             logger.info('Biencoder: Embedding and indexing finished')
 
             logger.info("Biencoder: Finding nearest mentions and entities for each mention...")
-            bi_dict_nns = np.zeros((len(train_men_embeddings), k_dict_nns))  # negatives
-            bi_men_nns = np.zeros((len(train_men_embeddings), k_men_nns))  # negatives
-            bi_men_gold_nns = -1 * np.ones((len(train_men_embeddings), k_men_nns))  # positives
+            bi_dict_nns = np.zeros((len(train_men_embeddings), k_dict_nns), dtype=int)  # negatives
+            bi_men_nns = -1 * np.ones((len(train_men_embeddings), k_men_nns), dtype=int)  # negatives
+            bi_men_gold_nns = -1 * np.ones((len(train_men_embeddings), k_men_nns), dtype=int)  # positives
             if not use_types:
                 _, bi_dict_nns_np = dict_index.search(train_men_embeddings, k_dict_nns+1)
                 _, bi_men_nns_np = train_men_index.search(train_men_embeddings, len(train_men_embeddings))
@@ -293,11 +319,18 @@ def get_biencoder_nns(bi_reranker, biencoder_indices_path, entity_dictionary, en
                     gold_idx = train_processed_data[i]['label_idxs'][0]
                     bi_dict_nns[i] = bi_dict_nns_np[i][bi_dict_nns_np[i] != gold_idx][:k_dict_nns]
                     men_neg_mask = ~np.isin(bi_men_nns_np[i], train_gold_clusters[gold_idx])
-                    bi_men_nns[i] = bi_men_nns_np[i][men_neg_mask][:k_men_nns]
+                    neg_nns = bi_men_nns_np[i][men_neg_mask]
+                    if within_doc:
+                        neg_nns = filter_by_context_doc_id(neg_nns, train_context_doc_ids[i], train_context_doc_ids,
+                                                           return_numpy=True)
+                    bi_men_nns[i][:len(neg_nns[:k_men_nns])] = neg_nns[:k_men_nns]
                     men_gold_mask = (np.isin(bi_men_nns_np[i], train_gold_clusters[gold_idx])) & (bi_men_nns_np[i] != i)
-                    gold_nns = bi_men_nns_np[i][men_gold_mask][:k_men_nns]
+                    gold_nns = bi_men_nns_np[i][men_gold_mask]
+                    if within_doc:
+                        gold_nns = filter_by_context_doc_id(gold_nns, train_context_doc_ids[i], train_context_doc_ids,
+                                                            return_numpy=True)
                     # If len(gold_nns) < k_men_nns then set bi_men_gold_nns[i] = [...gold_nns, -1, -1, ...]
-                    bi_men_gold_nns[i][:len(gold_nns)] = gold_nns
+                    bi_men_gold_nns[i][:len(gold_nns[:k_men_nns])] = gold_nns[:k_men_nns]
             else:
                 for entity_type in train_men_indexes:
                     men_embeds_by_type = train_men_embeddings[men_idxs_by_type[entity_type]]
@@ -309,18 +342,27 @@ def get_biencoder_nns(bi_reranker, biencoder_indices_path, entity_dictionary, en
                         gold_idx = train_processed_data[idx]['label_idxs'][0]
                         bi_dict_nns[idx] = dict_nns_idxs[i][dict_nns_idxs[i] != gold_idx][:k_dict_nns]
                         men_neg_mask = ~np.isin(men_nns_idxs[i], train_gold_clusters[gold_idx])
-                        bi_men_nns[idx] = men_nns_idxs[i][men_neg_mask][:k_men_nns]
+                        neg_nns = men_nns_idxs[i][men_neg_mask]
+                        if within_doc:
+                            neg_nns = filter_by_context_doc_id(neg_nns, train_context_doc_ids[idx],
+                                                               train_context_doc_ids,
+                                                               return_numpy=True)
+                        bi_men_nns[idx][:len(neg_nns[:k_men_nns])] = neg_nns[:k_men_nns]
                         men_gold_mask = (np.isin(men_nns_idxs[i], train_gold_clusters[gold_idx])) & (men_nns_idxs[i] != idx)
-                        gold_nns = men_nns_idxs[i][men_gold_mask][:k_men_nns]
+                        gold_nns = men_nns_idxs[i][men_gold_mask]
+                        if within_doc:
+                            gold_nns = filter_by_context_doc_id(gold_nns, train_context_doc_ids[idx],
+                                                                train_context_doc_ids,
+                                                                return_numpy=True)
                         # If len(gold_nns) < k_men_nns then set bi_men_gold_nns[i] = [...gold_nns, -1, -1, ...]
-                        bi_men_gold_nns[idx][:len(gold_nns)] = gold_nns
+                        bi_men_gold_nns[idx][:len(gold_nns[:k_men_nns])] = gold_nns[:k_men_nns]
             logger.info("Biencoder: Search finished")
 
             logger.info("Biencoder: Saving sorted biencoder train indices...")
             biencoder_train_idxs = {
-                'dict_nns': bi_dict_nns.astype(int),  # Nearest negative entity idxs
-                'men_nns': bi_men_nns.astype(int),  # Nearest negative mention idxs
-                'men_gold_nns': bi_men_gold_nns.astype(int)  # Nearest gold mention idxs
+                'dict_nns': bi_dict_nns,  # Nearest negative entity idxs
+                'men_nns': bi_men_nns,  # Nearest negative mention idxs
+                'men_gold_nns': bi_men_gold_nns  # Nearest gold mention idxs
             }
             with open(biencoder_train_idxs_pkl_path, 'wb') as write_handle:
                 pickle.dump(biencoder_train_idxs, write_handle,
@@ -355,30 +397,39 @@ def get_biencoder_nns(bi_reranker, biencoder_indices_path, entity_dictionary, en
         logger.info('Biencoder: Embedding and indexing finished')
 
         logger.info("Biencoder: Finding nearest mentions and entities for each mention...")
-        bi_dict_nns = np.zeros((len(valid_men_embeddings), k_dict_nns))
-        bi_men_nns = np.zeros((len(valid_men_embeddings), k_men_nns))
+        bi_dict_nns = np.zeros((len(valid_men_embeddings), k_dict_nns), dtype=int)
+        bi_men_nns = -1 * np.ones((len(valid_men_embeddings), k_men_nns), dtype=int)
+        n_mens_to_fetch = len(valid_men_embeddings) if within_doc else k_men_nns+1
         if not use_types:
             _, bi_dict_nns_np = dict_index.search(valid_men_embeddings, k_dict_nns)
-            _, bi_men_nns_np = valid_men_index.search(valid_men_embeddings, k_men_nns+1)
+            _, bi_men_nns_np = valid_men_index.search(valid_men_embeddings, n_mens_to_fetch)
             for i in range(len(bi_men_nns_np)):
                 bi_dict_nns[i] = bi_dict_nns_np[i]
-                bi_men_nns[i] = bi_men_nns_np[i][bi_men_nns_np[i] != i][:k_men_nns]
+                if within_doc:
+                    men_nns = filter_by_context_doc_id(bi_men_nns_np[i], valid_context_doc_ids[i], valid_context_doc_ids,
+                                                       return_numpy=True)
+                men_nns = men_nns[men_nns != i][:k_men_nns]
+                bi_men_nns[i][:len(men_nns)] = men_nns
         else:
             for entity_type in valid_men_indexes:
                 men_embeds_by_type = valid_men_embeddings[valid_men_idxs_by_type[entity_type]]
                 _, dict_nns_by_type = dict_indexes[entity_type].search(men_embeds_by_type, k_dict_nns)
-                _, men_nns_by_type = valid_men_indexes[entity_type].search(men_embeds_by_type,
-                                                                           k_men_nns+1)
+                _, men_nns_by_type = valid_men_indexes[entity_type].search(men_embeds_by_type, n_mens_to_fetch)
                 dict_nns_idxs = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], dict_nns_by_type)))
                 men_nns_idxs = np.array(list(map(lambda x: valid_men_idxs_by_type[entity_type][x], men_nns_by_type)))
                 for i, idx in enumerate(valid_men_idxs_by_type[entity_type]):
                     bi_dict_nns[idx] = dict_nns_idxs[i]
-                    bi_men_nns[idx] = men_nns_idxs[i][men_nns_idxs[i] != idx][:k_men_nns]
+                    if within_doc:
+                        men_nns = filter_by_context_doc_id(men_nns_idxs[i], valid_context_doc_ids[idx],
+                                                           valid_context_doc_ids,
+                                                           return_numpy=True)
+                    men_nns = men_nns[men_nns != idx][:k_men_nns]
+                    bi_men_nns[idx][:len(men_nns)] = men_nns
         logger.info("Biencoder: Search finished")
 
         biencoder_valid_idxs = {
-            'dict_nns': bi_dict_nns.astype(int),  # Nearest entity idxs
-            'men_nns': bi_men_nns.astype(int)  # Nearest mention idxs
+            'dict_nns': bi_dict_nns,  # Nearest entity idxs
+            'men_nns': bi_men_nns  # Nearest mention idxs
         }
 
         logger.info("Biencoder: Saving sorted biencoder valid indices...")
@@ -449,11 +500,10 @@ def load_training_data(bi_tokenizer,
 
         # Check if dataset has multiple ground-truth labels
         mult_labels = "labels" in train_samples[0].keys()
-        if params["filter_unlabeled"]:
-            # Filter samples without gold entities
-            train_samples = list(
-                filter(lambda sample: (len(sample["labels"]) > 0) if mult_labels else (sample["label"] is not None),
-                       train_samples))
+        # Filter samples without gold entities
+        train_samples = list(
+            filter(lambda sample: (len(sample["labels"]) > 0) if mult_labels else (sample["label"] is not None),
+                   train_samples))
         logger.info("Read %d train samples." % len(train_samples))
 
         # For discovery experiment: Drop entities used in training that were dropped randomly from dev/test set
@@ -718,6 +768,7 @@ def get_train_neg_cross_inputs(cross_reranker,
                                train_men_concat_inputs,
                                train_ent_concat_inputs,
                                n_knn_men_negs,
+                               bi_train_nn_count,
                                n_knn_ent_negs,
                                logger,
                                debug=False):
@@ -726,6 +777,10 @@ def get_train_neg_cross_inputs(cross_reranker,
             concat_inputs = concat_inputs[:200]
         scores = score_in_batches(cross_reranker, max_context_length, concat_inputs,
                                   is_context_encoder=is_context_encoder)
+        if is_context_encoder:
+            for i in range(len(scores)):
+                # Set scores for all invalid nearest neighbours to -infinity (due to variable NN counts of mentions)
+                scores[i][bi_train_nn_count[i]:] = float('-inf')
         topk_idxs = torch.argsort(scores, dim=1, descending=True)[:, :n_knn]
         stacked = []
         for r in range(topk_idxs.size(0)):
@@ -744,6 +799,47 @@ def get_train_neg_cross_inputs(cross_reranker,
         neg_ent_topk_inputs = _helper(concat_inputs=train_ent_concat_inputs, n_knn=n_knn_ent_negs,
                                       is_context_encoder=False)
     return neg_men_topk_inputs, neg_ent_topk_inputs
+
+
+def execute_training_step(mention_idxs,
+                          bi_train_nn_count,
+                          n_knn_men_negs,
+                          batch_positive_scores,
+                          batch_negative_men_inputs,
+                          batch_negative_ent_inputs,
+                          cross_reranker,
+                          max_context_length,
+                          grad_acc_steps):
+    # Handle variable mention-negatives lengths for different training queries in the batch
+    min_negs = float('inf')
+    dual_negs_mask = np.array([True] * len(mention_idxs))  # Mask to keep queries with both ent and men negs
+    skipped = 0
+    for i, m_idx in enumerate(mention_idxs):
+        if bi_train_nn_count[m_idx] == 0:  # If no negative mentions neighbours
+            dual_negs_mask[i] = False
+            skipped += 1
+            continue
+        min_negs = min(min_negs, bi_train_nn_count[m_idx], n_knn_men_negs)
+    if min_negs != float('inf'):  # i.e. at least 1 query has dual negs
+        positive_scores = batch_positive_scores[dual_negs_mask]
+        negative_men_inputs = batch_negative_men_inputs[dual_negs_mask][:, :min_negs]
+        negative_ent_inputs = batch_negative_ent_inputs[dual_negs_mask]
+        loss = cross_reranker(positive_scores, negative_men_inputs,
+                              negative_ent_inputs, max_context_length)
+        loss = loss / grad_acc_steps
+        dual_negs_loss_value = loss.item()
+        loss.backward()
+    if skipped > 0:
+        positive_scores = batch_positive_scores[~dual_negs_mask]
+        negative_men_inputs = None
+        negative_ent_inputs = batch_negative_ent_inputs[~dual_negs_mask]
+        loss = cross_reranker(positive_scores, negative_men_inputs,
+                              negative_ent_inputs, max_context_length)
+        loss = loss / grad_acc_steps
+        ent_neg_loss_value = loss.item()
+        loss.backward()
+    total_loss = (dual_negs_loss_value * (len(mention_idxs) - skipped) + ent_neg_loss_value * skipped) / len(mention_idxs)
+    return total_loss
 
 
 def main(params):
@@ -841,6 +937,12 @@ def main(params):
     # Store query mention vectors
     valid_men_vecs = valid_tensor_data[:][0]
 
+    train_context_doc_ids = valid_context_doc_ids = None
+    if within_doc:
+        # Get context_document_ids for each mention in training and validation
+        train_context_doc_ids = get_context_doc_ids("train", params)
+        valid_context_doc_ids = get_context_doc_ids("valid", params)
+
     if params["only_evaluate"]:
         _, biencoder_valid_idxs = get_biencoder_nns(bi_reranker=bi_reranker,
                                                     biencoder_indices_path=biencoder_indices_path,
@@ -854,7 +956,10 @@ def main(params):
                                                     use_types=use_types,
                                                     logger=logger,
                                                     n_gpu=n_gpu,
-                                                    params=params)
+                                                    params=params,
+                                                    train_context_doc_ids=train_context_doc_ids,
+                                                    valid_context_doc_ids=valid_context_doc_ids)
+        bi_valid_nn_count = np.sum(biencoder_valid_idxs['men_nns'] != -1, axis=1)
         # Compute and store the concatenated cross-encoder inputs for validation
         valid_men_concat_inputs, valid_ent_concat_inputs = build_cross_concat_input(biencoder_valid_idxs,
                                                                                     valid_men_vecs,
@@ -866,6 +971,7 @@ def main(params):
                  entity_dictionary,
                  valid_processed_data,
                  biencoder_valid_idxs,
+                 bi_valid_nn_count,
                  valid_men_concat_inputs,
                  valid_ent_concat_inputs,
                  logger,
@@ -890,7 +996,13 @@ def main(params):
                                                                    use_types=use_types,
                                                                    logger=logger,
                                                                    n_gpu=n_gpu,
-                                                                   params=params)
+                                                                   params=params,
+                                                                   train_context_doc_ids=train_context_doc_ids,
+                                                                   valid_context_doc_ids=valid_context_doc_ids
+                                                                   )
+    bi_train_nn_count = np.sum(biencoder_train_idxs['men_nns'] != -1, axis=1)
+    bi_valid_nn_count = np.sum(biencoder_valid_idxs['men_nns'] != -1, axis=1)
+
     # Compute and store the concatenated cross-encoder inputs for validation
     logger.info('Computing the concatenated cross-encoder inputs for validation...')
     valid_men_concat_inputs, valid_ent_concat_inputs = build_cross_concat_input(biencoder_valid_idxs,
@@ -916,6 +1028,7 @@ def main(params):
                  entity_dictionary,
                  valid_processed_data,
                  biencoder_valid_idxs,
+                 bi_valid_nn_count,
                  valid_men_concat_inputs,
                  valid_ent_concat_inputs,
                  logger,
@@ -991,7 +1104,9 @@ def main(params):
                                              biencoder_train_idxs['men_gold_nns'],
                                              max_seq_length,
                                              knn=params.get("gold_arbo_knn", 1),
-                                             debug=debug)
+                                             debug=debug,
+                                             within_doc=within_doc,
+                                             train_context_doc_ids=train_context_doc_ids)
             logger.info("Done")
 
             # Score biencoder negatives using cross-encoder and store nearest-k for this epoch
@@ -1001,6 +1116,7 @@ def main(params):
                                                                                   train_men_concat_inputs,
                                                                                   train_ent_concat_inputs,
                                                                                   n_knn_men_negs,
+                                                                                  bi_train_nn_count,
                                                                                   n_knn_ent_negs,
                                                                                   logger,
                                                                                   debug=debug)
@@ -1032,24 +1148,27 @@ def main(params):
                 max_seq_length=max_seq_length,
                 max_context_length=max_context_length)
 
-            loss = cross_reranker(batch_positive_scores, batch_negative_men_inputs,
-                                  batch_negative_ent_inputs, max_context_length)
+            total_loss = execute_training_step(mention_idxs,
+                                               bi_train_nn_count,
+                                               n_knn_men_negs,
+                                               batch_positive_scores,
+                                               batch_negative_men_inputs,
+                                               batch_negative_ent_inputs,
+                                               cross_reranker,
+                                               max_context_length,
+                                               grad_acc_steps)
+            tr_loss += total_loss
 
-            if grad_acc_steps > 1:
-                loss = loss / grad_acc_steps
-            tr_loss += loss.item()
-
-            if (step + 1) % (params["print_interval"] * grad_acc_steps) == 0:
+            n_print_iters = params["print_interval"] * grad_acc_steps
+            if (step + 1) % n_print_iters == 0:
                 logger.info(
-                    "Step {} - epoch {} average loss: {}\n".format(
+                    "Step {} - epoch {} average loss: {}".format(
                         step,
                         epoch_idx,
-                        tr_loss / (params["print_interval"] * grad_acc_steps),
+                        tr_loss / n_print_iters,
                     )
                 )
                 tr_loss = 0
-
-            loss.backward()
 
             if (step + 1) % grad_acc_steps == 0:
                 torch.nn.utils.clip_grad_norm_(
@@ -1067,6 +1186,7 @@ def main(params):
                              entity_dictionary,
                              valid_processed_data,
                              biencoder_valid_idxs,
+                             bi_valid_nn_count,
                              valid_men_concat_inputs,
                              valid_ent_concat_inputs,
                              logger,
@@ -1088,6 +1208,7 @@ def main(params):
                                      entity_dictionary,
                                      valid_processed_data,
                                      biencoder_valid_idxs,
+                                     bi_valid_nn_count,
                                      valid_men_concat_inputs,
                                      valid_ent_concat_inputs,
                                      logger,

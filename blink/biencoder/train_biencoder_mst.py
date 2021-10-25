@@ -747,7 +747,6 @@ def main(params):
                 total_skipped = 0
                 total_knn_men_negs = 0
                 tr_loss = 0
-                print("\n")
 
             if (step + 1) % grad_acc_steps == 0:
                 torch.nn.utils.clip_grad_norm_(
