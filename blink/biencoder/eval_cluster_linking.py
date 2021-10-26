@@ -229,6 +229,30 @@ def analyzeClusters(clusters, dictionary, queries, knn, n_train_mentions=0):
 
     return results
 
+
+def filter_by_context_doc_id(mention_idxs, doc_id, doc_id_list, return_numpy=False):
+    mask = [doc_id_list[i] == doc_id for i in mention_idxs]
+    if isinstance(mention_idxs, list):
+        mention_idxs = np.array(mention_idxs)
+    mention_idxs = mention_idxs[mask]
+    if not return_numpy:
+        mention_idxs = list(mention_idxs)
+    return mention_idxs, mask
+
+
+def read_data(split, params, logger):
+    samples = utils.read_dataset(split, params["data_path"])
+    # Check if dataset has multiple ground-truth labels
+    has_mult_labels = "labels" in samples[0].keys()
+    if params["filter_unlabeled"]:
+        # Filter samples without gold entities
+        samples = list(
+            filter(lambda sample: (len(sample["labels"]) > 0) if has_mult_labels else (sample["label"] is not None),
+                   samples))
+    logger.info(f"Read {len(samples)} {split} samples.")
+    return samples, has_mult_labels
+
+
 def main(params):
     output_path = params["output_path"]
     if not os.path.exists(output_path):
@@ -247,12 +271,11 @@ def main(params):
     reranker = BiEncoderRanker(params)
     reranker.model.eval()
     tokenizer = reranker.tokenizer
-    model = reranker.model
-    device = reranker.device
     n_gpu = reranker.n_gpu
 
     knn = params["knn"]
     use_types = params["use_types"]
+    within_doc = params["within_doc"]
     data_split = params["data_split"] # Default = "test"
 
     # Load test data
@@ -322,6 +345,11 @@ def main(params):
 
     n_entities = len(test_dict_vecs)
     n_mentions = len(test_tensor_data)
+
+    if within_doc:
+        if test_samples is None:
+            test_samples, _ = read_data(data_split, params, logger)
+        test_context_doc_ids = [s['context_doc_id'] for s in test_samples]
 
     if params["transductive"]:
         if os.path.isfile(train_tensor_data_pkl_path) and os.path.isfile(train_mention_data_pkl_path):
@@ -460,18 +488,20 @@ def main(params):
             if params['transductive']:
                 _men_embeds = _men_embeds[n_train_mentions:]
             nn_ent_dists, nn_ent_idxs = dict_index.search(_men_embeds, params['recall_k'])
-            nn_men_dists, nn_men_idxs = men_index.search(_men_embeds, max_knn + 1)
+            n_mens_to_fetch = len(_men_embeds) if within_doc else max_knn + 1
+            nn_men_dists, nn_men_idxs = men_index.search(_men_embeds, n_mens_to_fetch)
         else:
             query_len = len(men_embeds) - (n_train_mentions if params['transductive'] else 0)
             nn_ent_idxs = np.zeros((query_len, params['recall_k']))
             nn_ent_dists = np.zeros((query_len, params['recall_k']), dtype='float64')
-            nn_men_idxs = np.zeros((query_len, max_knn + 1))
-            nn_men_dists = np.zeros((query_len, max_knn + 1), dtype='float64')
+            nn_men_idxs = -1 * np.ones((query_len, max_knn + 1), dtype=int)
+            nn_men_dists = -1 * np.ones((query_len, max_knn + 1), dtype='float64')
             for entity_type in men_indexes:
                 men_embeds_by_type = men_embeds[men_idxs_by_type[entity_type][men_idxs_by_type[entity_type] >= n_train_mentions]] if params['transductive'] else men_embeds[men_idxs_by_type[entity_type]]
                 nn_ent_dists_by_type, nn_ent_idxs_by_type = dict_indexes[entity_type].search(men_embeds_by_type, params['recall_k'])
-                nn_men_dists_by_type, nn_men_idxs_by_type = men_indexes[entity_type].search(men_embeds_by_type, max_knn + 1)
                 nn_ent_idxs_by_type = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], nn_ent_idxs_by_type)))
+                n_mens_to_fetch = len(men_embeds_by_type) if within_doc else max_knn + 1
+                nn_men_dists_by_type, nn_men_idxs_by_type = men_indexes[entity_type].search(men_embeds_by_type, min(n_mens_to_fetch, len(men_embeds_by_type)))
                 nn_men_idxs_by_type = np.array(list(map(lambda x: men_idxs_by_type[entity_type][x], nn_men_idxs_by_type)))
                 i = -1
                 for idx in men_idxs_by_type[entity_type]:
@@ -482,8 +512,8 @@ def main(params):
                     i += 1
                     nn_ent_idxs[idx] = nn_ent_idxs_by_type[i]
                     nn_ent_dists[idx] = nn_ent_dists_by_type[i]
-                    nn_men_idxs[idx] = nn_men_idxs_by_type[i]
-                    nn_men_dists[idx] = nn_men_dists_by_type[i]
+                    nn_men_idxs[idx][:len(nn_men_idxs_by_type[i])] = nn_men_idxs_by_type[i]
+                    nn_men_dists[idx][:len(nn_men_dists_by_type[i])] = nn_men_dists_by_type[i]
         logger.info("Search finished")
 
         logger.info('Building graphs')
@@ -502,10 +532,17 @@ def main(params):
                     if recall_idx < recall_k:
                         recall_accuracy[recall_k] += 1.
             if not params['only_recall']:
+                filter_mask_neg1 = nn_men_idxs[idx] != -1
+                men_cand_idxs = nn_men_idxs[idx][filter_mask_neg1]
+                men_cand_scores = nn_men_dists[idx][filter_mask_neg1]
+
+                if within_doc:
+                    men_cand_idxs, wd_mask = filter_by_context_doc_id(men_cand_idxs,
+                                                                      test_context_doc_ids[idx],
+                                                                      test_context_doc_ids, return_numpy=True)
+                    men_cand_scores = men_cand_scores[wd_mask]
+
                 # Filter candidates to remove mention query and keep only the top k candidates
-                men_cand_idxs = nn_men_idxs[idx]
-                men_cand_scores = nn_men_dists[idx]
-                
                 filter_mask = men_cand_idxs != idx
                 men_cand_idxs, men_cand_scores = men_cand_idxs[filter_mask][:max_knn], men_cand_scores[filter_mask][:max_knn]
 
