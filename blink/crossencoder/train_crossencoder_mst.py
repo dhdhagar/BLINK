@@ -822,27 +822,23 @@ def execute_training_step(mention_idxs,
             skipped += 1
             continue
         min_negs = min(min_negs, bi_train_nn_count[m_idx], n_knn_men_negs)
-    dual_negs_loss_value = ent_neg_loss_value = 0
+    loss_dual_negs = loss_ent_negs = 0
+    assert min_negs != float('inf') or skipped > 0
     if min_negs != float('inf'):  # i.e. at least 1 query has dual negs
         positive_scores = batch_positive_scores[dual_negs_mask]
         negative_men_inputs = batch_negative_men_inputs[dual_negs_mask][:, :min_negs]
         negative_ent_inputs = batch_negative_ent_inputs[dual_negs_mask]
-        loss = cross_reranker(positive_scores, negative_men_inputs,
-                              negative_ent_inputs, max_context_length)
-        loss = loss / grad_acc_steps
-        dual_negs_loss_value = loss.item()
-        loss.backward()
+        loss_dual_negs = cross_reranker(positive_scores, negative_men_inputs,
+                                        negative_ent_inputs, max_context_length)
     if skipped > 0:
         positive_scores = batch_positive_scores[~dual_negs_mask]
         negative_men_inputs = None
         negative_ent_inputs = batch_negative_ent_inputs[~dual_negs_mask]
-        loss = cross_reranker(positive_scores, negative_men_inputs,
-                              negative_ent_inputs, max_context_length)
-        loss = loss / grad_acc_steps
-        ent_neg_loss_value = loss.item()
-        loss.backward()
-    total_loss = (dual_negs_loss_value * (len(mention_idxs) - skipped) + ent_neg_loss_value * skipped) / len(mention_idxs)
-    return total_loss
+        loss_ent_negs = cross_reranker(positive_scores, negative_men_inputs,
+                                       negative_ent_inputs, max_context_length)
+    loss = ((loss_dual_negs * (len(mention_idxs) - skipped) + loss_ent_negs * skipped) / len(mention_idxs)) / grad_acc_steps
+    loss.backward()
+    return loss.item()
 
 
 def main(params):
