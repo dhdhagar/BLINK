@@ -279,6 +279,7 @@ def main(params):
     data_split = params["data_split"] # Default = "test"
 
     # Load test data
+    test_samples = None
     entity_dictionary_loaded = False
     test_dictionary_pkl_path = os.path.join(pickle_src_path, 'test_dictionary.pickle')
     test_tensor_data_pkl_path = os.path.join(pickle_src_path, 'test_tensor_data.pickle')
