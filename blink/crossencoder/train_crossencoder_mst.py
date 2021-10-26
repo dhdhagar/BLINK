@@ -321,13 +321,13 @@ def get_biencoder_nns(bi_reranker, biencoder_indices_path, entity_dictionary, en
                     men_neg_mask = ~np.isin(bi_men_nns_np[i], train_gold_clusters[gold_idx])
                     neg_nns = bi_men_nns_np[i][men_neg_mask]
                     if within_doc:
-                        neg_nns = filter_by_context_doc_id(neg_nns, train_context_doc_ids[i], train_context_doc_ids,
+                        neg_nns, _ = filter_by_context_doc_id(neg_nns, train_context_doc_ids[i], train_context_doc_ids,
                                                            return_numpy=True)
                     bi_men_nns[i][:len(neg_nns[:k_men_nns])] = neg_nns[:k_men_nns]
                     men_gold_mask = (np.isin(bi_men_nns_np[i], train_gold_clusters[gold_idx])) & (bi_men_nns_np[i] != i)
                     gold_nns = bi_men_nns_np[i][men_gold_mask]
                     if within_doc:
-                        gold_nns = filter_by_context_doc_id(gold_nns, train_context_doc_ids[i], train_context_doc_ids,
+                        gold_nns, _ = filter_by_context_doc_id(gold_nns, train_context_doc_ids[i], train_context_doc_ids,
                                                             return_numpy=True)
                     # If len(gold_nns) < k_men_nns then set bi_men_gold_nns[i] = [...gold_nns, -1, -1, ...]
                     bi_men_gold_nns[i][:len(gold_nns[:k_men_nns])] = gold_nns[:k_men_nns]
@@ -344,14 +344,14 @@ def get_biencoder_nns(bi_reranker, biencoder_indices_path, entity_dictionary, en
                         men_neg_mask = ~np.isin(men_nns_idxs[i], train_gold_clusters[gold_idx])
                         neg_nns = men_nns_idxs[i][men_neg_mask]
                         if within_doc:
-                            neg_nns = filter_by_context_doc_id(neg_nns, train_context_doc_ids[idx],
+                            neg_nns, _ = filter_by_context_doc_id(neg_nns, train_context_doc_ids[idx],
                                                                train_context_doc_ids,
                                                                return_numpy=True)
                         bi_men_nns[idx][:len(neg_nns[:k_men_nns])] = neg_nns[:k_men_nns]
                         men_gold_mask = (np.isin(men_nns_idxs[i], train_gold_clusters[gold_idx])) & (men_nns_idxs[i] != idx)
                         gold_nns = men_nns_idxs[i][men_gold_mask]
                         if within_doc:
-                            gold_nns = filter_by_context_doc_id(gold_nns, train_context_doc_ids[idx],
+                            gold_nns, _ = filter_by_context_doc_id(gold_nns, train_context_doc_ids[idx],
                                                                 train_context_doc_ids,
                                                                 return_numpy=True)
                         # If len(gold_nns) < k_men_nns then set bi_men_gold_nns[i] = [...gold_nns, -1, -1, ...]
@@ -407,7 +407,7 @@ def get_biencoder_nns(bi_reranker, biencoder_indices_path, entity_dictionary, en
                 bi_dict_nns[i] = bi_dict_nns_np[i]
                 men_nns = bi_men_nns_np[i][bi_men_nns_np[i] != i]
                 if within_doc:
-                    men_nns = filter_by_context_doc_id(men_nns, valid_context_doc_ids[i], valid_context_doc_ids,
+                    men_nns, _ = filter_by_context_doc_id(men_nns, valid_context_doc_ids[i], valid_context_doc_ids,
                                                        return_numpy=True)
                 men_nns = men_nns[:k_men_nns]
                 bi_men_nns[i][:len(men_nns)] = men_nns
@@ -422,7 +422,7 @@ def get_biencoder_nns(bi_reranker, biencoder_indices_path, entity_dictionary, en
                     bi_dict_nns[idx] = dict_nns_idxs[i]
                     men_nns = men_nns_idxs[i][men_nns_idxs[i] != idx]
                     if within_doc:
-                        men_nns = filter_by_context_doc_id(men_nns, valid_context_doc_ids[idx],
+                        men_nns, _ = filter_by_context_doc_id(men_nns, valid_context_doc_ids[idx],
                                                            valid_context_doc_ids,
                                                            return_numpy=True)
                     men_nns = men_nns[:k_men_nns]
@@ -626,7 +626,7 @@ def get_gold_arbo_links(cross_reranker,
                 # Get <knn> nearest (biencoder) gold mentions
                 gold_nns = gold_men_nns[mention_idx][gold_men_nns[mention_idx] != -1]
                 if within_doc:
-                    gold_nns = filter_by_context_doc_id(gold_nns,
+                    gold_nns, _ = filter_by_context_doc_id(gold_nns,
                                                         train_context_doc_ids[mention_idx],
                                                         train_context_doc_ids,
                                                         return_numpy=True)
