@@ -79,7 +79,7 @@ def evaluate(reranker, valid_dict_vecs, valid_men_vecs, device, logger, knn, n_g
             men_embeds_by_type = men_embeds[men_idxs_by_type[entity_type]]
             nn_ent_dists_by_type, nn_ent_idxs_by_type = dict_indexes[entity_type].search(men_embeds_by_type, 1)
             nn_ent_idxs_by_type = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], nn_ent_idxs_by_type)))
-            nn_men_dists_by_type, nn_men_idxs_by_type = men_indexes[entity_type].search(men_embeds_by_type, len(men_embeds_by_type))
+            nn_men_dists_by_type, nn_men_idxs_by_type = men_indexes[entity_type].search(men_embeds_by_type, min(n_men_to_fetch, len(men_embeds_by_type)))
             nn_men_idxs_by_type = np.array(list(map(lambda x: men_idxs_by_type[entity_type][x], nn_men_idxs_by_type)))
             for i, idx in enumerate(men_idxs_by_type[entity_type]):
                 nn_ent_idxs[idx] = nn_ent_idxs_by_type[i]
