@@ -822,6 +822,7 @@ def execute_training_step(mention_idxs,
             skipped += 1
             continue
         min_negs = min(min_negs, bi_train_nn_count[m_idx], n_knn_men_negs)
+    dual_negs_loss_value = ent_neg_loss_value = 0
     if min_negs != float('inf'):  # i.e. at least 1 query has dual negs
         positive_scores = batch_positive_scores[dual_negs_mask]
         negative_men_inputs = batch_negative_men_inputs[dual_negs_mask][:, :min_negs]
