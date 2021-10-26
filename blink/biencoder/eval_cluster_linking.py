@@ -495,8 +495,8 @@ def main(params):
             query_len = len(men_embeds) - (n_train_mentions if params['transductive'] else 0)
             nn_ent_idxs = np.zeros((query_len, params['recall_k']))
             nn_ent_dists = np.zeros((query_len, params['recall_k']), dtype='float64')
-            nn_men_idxs = -1 * np.ones((query_len, max_knn + 1), dtype=int)
-            nn_men_dists = -1 * np.ones((query_len, max_knn + 1), dtype='float64')
+            nn_men_idxs = -1 * np.ones((query_len, query_len), dtype=int)
+            nn_men_dists = -1 * np.ones((query_len, query_len), dtype='float64')
             for entity_type in men_indexes:
                 men_embeds_by_type = men_embeds[men_idxs_by_type[entity_type][men_idxs_by_type[entity_type] >= n_train_mentions]] if params['transductive'] else men_embeds[men_idxs_by_type[entity_type]]
                 nn_ent_dists_by_type, nn_ent_idxs_by_type = dict_indexes[entity_type].search(men_embeds_by_type, params['recall_k'])
