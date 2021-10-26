@@ -335,7 +335,7 @@ def get_biencoder_nns(bi_reranker, biencoder_indices_path, entity_dictionary, en
                 for entity_type in train_men_indexes:
                     men_embeds_by_type = train_men_embeddings[men_idxs_by_type[entity_type]]
                     _, dict_nns_by_type = dict_indexes[entity_type].search(men_embeds_by_type, k_dict_nns+1)
-                    _, men_nns_by_type = train_men_indexes[entity_type].search(men_embeds_by_type, len(train_men_embeddings))
+                    _, men_nns_by_type = train_men_indexes[entity_type].search(men_embeds_by_type, len(men_embeds_by_type))
                     dict_nns_idxs = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], dict_nns_by_type)))
                     men_nns_idxs = np.array(list(map(lambda x: men_idxs_by_type[entity_type][x], men_nns_by_type)))
                     for i, idx in enumerate(men_idxs_by_type[entity_type]):
@@ -399,9 +399,9 @@ def get_biencoder_nns(bi_reranker, biencoder_indices_path, entity_dictionary, en
         logger.info("Biencoder: Finding nearest mentions and entities for each mention...")
         bi_dict_nns = np.zeros((len(valid_men_embeddings), k_dict_nns), dtype=int)
         bi_men_nns = -1 * np.ones((len(valid_men_embeddings), k_men_nns), dtype=int)
-        n_mens_to_fetch = len(valid_men_embeddings) if within_doc else k_men_nns+1
         if not use_types:
             _, bi_dict_nns_np = dict_index.search(valid_men_embeddings, k_dict_nns)
+            n_mens_to_fetch = len(valid_men_embeddings) if within_doc else k_men_nns+1
             _, bi_men_nns_np = valid_men_index.search(valid_men_embeddings, n_mens_to_fetch)
             for i in range(len(bi_men_nns_np)):
                 bi_dict_nns[i] = bi_dict_nns_np[i]
@@ -415,7 +415,7 @@ def get_biencoder_nns(bi_reranker, biencoder_indices_path, entity_dictionary, en
             for entity_type in valid_men_indexes:
                 men_embeds_by_type = valid_men_embeddings[valid_men_idxs_by_type[entity_type]]
                 _, dict_nns_by_type = dict_indexes[entity_type].search(men_embeds_by_type, k_dict_nns)
-                _, men_nns_by_type = valid_men_indexes[entity_type].search(men_embeds_by_type, n_mens_to_fetch)
+                _, men_nns_by_type = valid_men_indexes[entity_type].search(men_embeds_by_type, len(men_embeds_by_type))
                 dict_nns_idxs = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], dict_nns_by_type)))
                 men_nns_idxs = np.array(list(map(lambda x: valid_men_idxs_by_type[entity_type][x], men_nns_by_type)))
                 for i, idx in enumerate(valid_men_idxs_by_type[entity_type]):
