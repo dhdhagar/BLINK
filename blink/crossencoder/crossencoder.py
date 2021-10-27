@@ -210,7 +210,7 @@ class CrossEncoderRanker(torch.nn.Module):
     def score_candidate(self, text_vecs, context_len, is_context_encoder=True):
         # Encode contexts first
         num_cand = text_vecs.size(1)
-        text_vecs = text_vecs.view(-1, text_vecs.size(-1))
+        text_vecs = text_vecs.reshape(-1, text_vecs.size(-1))
         token_idx_ctxt, segment_idx_ctxt, mask_ctxt = to_bert_input(
             text_vecs, self.NULL_IDX, context_len,
         )
