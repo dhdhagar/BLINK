@@ -158,7 +158,7 @@ class CrossEncoderRanker(torch.nn.Module):
         self.add_sigmoid = params["add_sigmoid"]
         self.margin = params["margin"]
         self.objective = params["objective"]
-        self.pos_neg_loss = params["pos_neg_loss"]
+        self.pos_neg_loss = params.get("pos_neg_loss", False)
         assert self.objective == "softmax" or self.objective == "max_margin"
 
         # init model
