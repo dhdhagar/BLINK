@@ -456,6 +456,12 @@ class BlinkParser(argparse.ArgumentParser):
             "--scoring_batch_size", type=int, default=64,
             help="Batch size to use for cross-encoder scoring",
         )
+        parser.add_argument(
+            "--biencoder_indices_path",
+            default=None,
+            type=str,
+            help="Directory from which to store/load nearest biencoder indices for cross-encoder training.",
+        )
 
     def add_joint_train_args(self, args=None):
         """
