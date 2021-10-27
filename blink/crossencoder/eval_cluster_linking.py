@@ -183,7 +183,7 @@ def main(params):
     if within_doc:
         # Get context_document_ids for each mention in training and validation
         context_doc_ids = get_context_doc_ids(data_split, params)
-
+    params["only_evaluate"] = True  # Needed to call get_biencoder_nns() correctly
     _, biencoder_nns = get_biencoder_nns(bi_reranker=bi_reranker,
                                          biencoder_indices_path=biencoder_indices_path,
                                          entity_dictionary=entity_dictionary,
