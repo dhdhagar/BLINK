@@ -18,11 +18,11 @@ import pickle
 import copy
 
 import blink.biencoder.data_process_mult as data_process
-import blink.biencoder.eval_cluster_linking as eval_cluster_linking
 import blink.candidate_ranking.utils as utils
 from blink.common.params import BlinkParser
 from blink.biencoder.biencoder import BiEncoderRanker
 from blink.crossencoder.crossencoder import CrossEncoderRanker
+from blink.biencoder.eval_cluster_linking import analyzeClusters, partition_graph
 from blink.crossencoder.train_crossencoder_mst import get_context_doc_ids, get_biencoder_nns, build_cross_concat_input, \
     score_in_batches
 
@@ -341,10 +341,10 @@ def main(params):
                 continue  # Since @k=0 both modes are equivalent, so skip for one mode
             logger.info(f"\nGraph (k={k}):")
             # Partition graph based on cluster-linking constraints
-            partitioned_graph, clusters = eval_cluster_linking.partition_graph(
+            partitioned_graph, clusters = partition_graph(
                 joint_graphs[k], n_entities, directed=(mode == 'directed'), return_clusters=True)
             # Infer predictions from clusters
-            result = eval_cluster_linking.analyzeClusters(clusters, entity_dictionary, processed_data, k)
+            result = analyzeClusters(clusters, entity_dictionary, processed_data, k)
             # Store result
             results[mode].append(result)
             n_graphs_processed += 1
