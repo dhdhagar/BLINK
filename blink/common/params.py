@@ -448,6 +448,10 @@ class BlinkParser(argparse.ArgumentParser):
             "--within_doc", action="store_true",
             help="Whether to restrict mention-mention relationships to within the same context document.",
         )
+        parser.add_argument(
+            "--bi_knn", type=int, default=64,
+            help="Number of biencoder nearest-neighbors to fetch for cross-encoder scoring",
+        )
 
     def add_joint_train_args(self, args=None):
         """

@@ -31,7 +31,7 @@ from blink.common.params import BlinkParser
 
 from IPython import embed
 
-SCORING_BATCH_SIZE = 128
+SCORING_BATCH_SIZE = 64
 
 def concat_for_crossencoder(context_inputs, candidate_inputs, max_seq_length):
     """

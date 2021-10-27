@@ -29,7 +29,7 @@ from blink.crossencoder.train_crossencoder_mst import get_context_doc_ids, get_b
 from IPython import embed
 
 
-SCORING_BATCH_SIZE = 128
+SCORING_BATCH_SIZE = 64
 
 
 def load_data(data_split,
@@ -116,19 +116,6 @@ def filter_by_context_doc_id(mention_idxs, doc_id, doc_id_list, return_numpy=Fal
     return mention_idxs, mask
 
 
-def read_data(split, params, logger):
-    samples = utils.read_dataset(split, params["data_path"])
-    # Check if dataset has multiple ground-truth labels
-    has_mult_labels = "labels" in samples[0].keys()
-    if params["filter_unlabeled"]:
-        # Filter samples without gold entities
-        samples = list(
-            filter(lambda sample: (len(sample["labels"]) > 0) if has_mult_labels else (sample["label"] is not None),
-                   samples))
-    logger.info(f"Read {len(samples)} {split} samples.")
-    return samples, has_mult_labels
-
-
 def main(params):
     # Parameter initializations
     logger = utils.get_logger(params["output_path"])
@@ -157,6 +144,8 @@ def main(params):
     k_biencoder = params["bi_knn"]  # Number of biencoder nearest-neighbors to fetch for cross-encoder scoring (default: 64)
 
     # Cross-encoder model
+    params['add_linear'] = True
+    params['add_sigmoid'] = True
     cross_reranker = CrossEncoderRanker(params)
     n_gpu = cross_reranker.n_gpu
     cross_reranker.model.eval()
