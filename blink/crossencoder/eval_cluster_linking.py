@@ -18,11 +18,11 @@ import pickle
 import copy
 
 import blink.biencoder.data_process_mult as data_process
+from blink.biencoder.eval_cluster_linking import analyzeClusters, partition_graph
 import blink.candidate_ranking.utils as utils
-from blink.common.params import BlinkParser
 from blink.biencoder.biencoder import BiEncoderRanker
 from blink.crossencoder.crossencoder import CrossEncoderRanker
-from blink.biencoder.eval_cluster_linking import analyzeClusters, partition_graph
+from blink.common.params import BlinkParser
 from blink.crossencoder.train_crossencoder_mst import get_context_doc_ids, get_biencoder_nns, build_cross_concat_input, \
     score_in_batches
 
