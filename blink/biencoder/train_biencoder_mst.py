@@ -687,18 +687,17 @@ def main(params):
             context_inputs = batch_context_inputs[context_inputs_mask]
             context_inputs = context_inputs.cuda()
             label_inputs = torch.tensor([[1]+[0]*(knn_dict+knn_men)]*len(context_inputs), dtype=torch.float32).cuda()
-            
-            loss, _ = reranker(context_inputs, label_input=label_inputs, mst_data={
-                'positive_embeds': positive_embeds.cuda(),
-                'negative_dict_inputs': negative_dict_inputs.cuda(),
-                'negative_men_inputs': negative_men_inputs.cuda()
-            }, pos_neg_loss=params["pos_neg_loss"])
-            if grad_acc_steps > 1:
-                loss = loss / grad_acc_steps
-            loss_val = loss.item()
-            tr_loss += loss_val
-            # Backpropagate loss
-            loss.backward()
+
+            loss_dual_negs = loss_ent_negs = 0
+
+            # FIX: for error scenario of less number of examples than number of GPUs while using Data Parallel
+            data_parallel_batch_size_check = negative_men_inputs.shape[0] >= n_gpu and negative_dict_inputs.shape[0] >= n_gpu
+            if data_parallel_batch_size_check:
+                loss_dual_negs, _ = reranker(context_inputs, label_input=label_inputs, mst_data={
+                    'positive_embeds': positive_embeds.cuda(),
+                    'negative_dict_inputs': negative_dict_inputs.cuda(),
+                    'negative_men_inputs': negative_men_inputs.cuda()
+                }, pos_neg_loss=params["pos_neg_loss"])
 
             if skipped > 0 and not params["within_doc_skip_strategy"]:
                 skipped_negative_dict_inputs = torch.tensor(
@@ -718,19 +717,17 @@ def main(params):
                 skipped_label_inputs = torch.tensor([[1] + [0] * (knn_dict)] * len(skipped_context_inputs),
                                             dtype=torch.float32).cuda()
 
-                skipped_loss, _ = reranker(skipped_context_inputs, label_input=skipped_label_inputs, mst_data={
-                    'positive_embeds': skipped_positive_embeds.cuda(),
-                    'negative_dict_inputs': skipped_negative_dict_inputs.cuda(),
-                    'negative_men_inputs': None
-                }, pos_neg_loss=params["pos_neg_loss"])
-                if grad_acc_steps > 1:
-                    skipped_loss = skipped_loss / grad_acc_steps
-                # Correctly track the training loss for the batch
-                tr_loss -= loss_val
-                skipped_loss_val = skipped_loss.item()
-                tr_loss += (loss_val * len(context_inputs) + skipped_loss_val * len(skipped_context_inputs)) / (len(context_inputs) + len(skipped_context_inputs))
-                # Backpropagate entity-negs-only loss
-                skipped_loss.backward()
+                data_parallel_batch_size_check = skipped_negative_dict_inputs.shape[0] >= n_gpu
+                if data_parallel_batch_size_check:
+                    loss_ent_negs, _ = reranker(skipped_context_inputs, label_input=skipped_label_inputs, mst_data={
+                        'positive_embeds': skipped_positive_embeds.cuda(),
+                        'negative_dict_inputs': skipped_negative_dict_inputs.cuda(),
+                        'negative_men_inputs': None
+                    }, pos_neg_loss=params["pos_neg_loss"])
+
+            loss = ((loss_dual_negs * len(context_inputs) + loss_ent_negs * len(skipped_context_inputs)) / (len(context_inputs) + len(skipped_context_inputs))) / grad_acc_steps
+            tr_loss += loss.item()
+            loss.backward()
 
             n_print_iters = params["print_interval"] * grad_acc_steps
             if (step + 1) % n_print_iters == 0:
