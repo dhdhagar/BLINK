@@ -699,6 +699,7 @@ def main(params):
                     'negative_men_inputs': negative_men_inputs.cuda()
                 }, pos_neg_loss=params["pos_neg_loss"])
 
+            skipped_context_inputs = []
             if skipped > 0 and not params["within_doc_skip_strategy"]:
                 skipped_negative_dict_inputs = torch.tensor(
                     list(map(lambda x: entity_dict_vecs[x].numpy(), skipped_negative_dict_inputs)))
