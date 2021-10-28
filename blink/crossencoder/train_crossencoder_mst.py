@@ -61,8 +61,8 @@ def concat_for_crossencoder(context_inputs, candidate_inputs, max_seq_length):
     return torch.LongTensor(new_input)
 
 
-def score_in_batches(cross_reranker, max_context_length, cross_inputs, is_context_encoder, silent=False):
-    batch_size = SCORING_BATCH_SIZE
+def score_in_batches(cross_reranker, max_context_length, cross_inputs, is_context_encoder, silent=False, scoring_batch_size=None):
+    batch_size = scoring_batch_size if scoring_batch_size is not None else SCORING_BATCH_SIZE
     n_inputs, scores, reshaped = len(cross_inputs), None, False
     _iter = [cross_inputs]
     if n_inputs > 1:
@@ -811,7 +811,8 @@ def execute_training_step(mention_idxs,
                           batch_negative_ent_inputs,
                           cross_reranker,
                           max_context_length,
-                          grad_acc_steps):
+                          grad_acc_steps,
+                          n_gpu):
     # Handle variable mention-negatives lengths for different training queries in the batch
     min_negs = float('inf')
     dual_negs_mask = np.array([True] * len(mention_idxs))  # Mask to keep queries with both ent and men negs
@@ -828,14 +829,20 @@ def execute_training_step(mention_idxs,
         positive_scores = batch_positive_scores[dual_negs_mask]
         negative_men_inputs = batch_negative_men_inputs[dual_negs_mask][:, :min_negs]
         negative_ent_inputs = batch_negative_ent_inputs[dual_negs_mask]
-        loss_dual_negs = cross_reranker(positive_scores, negative_men_inputs,
-                                        negative_ent_inputs, max_context_length)
+        # FIX: for error scenario of less number of examples than number of GPUs while using Data Parallel
+        data_parallel_batch_size_check = negative_men_inputs.shape[0] * negative_men_inputs.shape[1] >= n_gpu and \
+                                         negative_ent_inputs.shape[0] * negative_ent_inputs.shape[1] >= n_gpu
+        if data_parallel_batch_size_check:
+            loss_dual_negs = cross_reranker(positive_scores, negative_men_inputs,
+                                            negative_ent_inputs, max_context_length)
     if skipped > 0:
         positive_scores = batch_positive_scores[~dual_negs_mask]
         negative_men_inputs = None
         negative_ent_inputs = batch_negative_ent_inputs[~dual_negs_mask]
-        loss_ent_negs = cross_reranker(positive_scores, negative_men_inputs,
-                                       negative_ent_inputs, max_context_length)
+        data_parallel_batch_size_check = negative_ent_inputs.shape[0] * negative_ent_inputs.shape[1] >= n_gpu
+        if data_parallel_batch_size_check:
+            loss_ent_negs = cross_reranker(positive_scores, negative_men_inputs,
+                                           negative_ent_inputs, max_context_length)
     loss = ((loss_dual_negs * (len(mention_idxs) - skipped) + loss_ent_negs * skipped) / len(mention_idxs)) / grad_acc_steps
     loss.backward()
     return loss.item()
@@ -1155,7 +1162,8 @@ def main(params):
                                                batch_negative_ent_inputs,
                                                cross_reranker,
                                                max_context_length,
-                                               grad_acc_steps)
+                                               grad_acc_steps,
+                                               n_gpu)
             tr_loss += total_loss
 
             n_print_iters = params["print_interval"] * grad_acc_steps

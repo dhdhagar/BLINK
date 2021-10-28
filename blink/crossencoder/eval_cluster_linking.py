@@ -246,7 +246,7 @@ def main(params):
             with torch.no_grad():
                 logger.info('Eval: Scoring mention-mention edges using cross-encoder...')
                 cross_men_scores = score_in_batches(cross_reranker, max_context_length, men_concat_inputs,
-                                                    is_context_encoder=True)
+                                                    is_context_encoder=True, scoring_batch_size=SCORING_BATCH_SIZE)
                 for i in range(len(cross_men_scores)):
                     # Set scores for all invalid nearest neighbours to -infinity (due to variable NN counts of mentions)
                     cross_men_scores[i][bi_nn_count[i]:] = float('-inf')
@@ -257,7 +257,7 @@ def main(params):
 
                 logger.info('Eval: Scoring mention-entity edges using cross-encoder...')
                 cross_ent_scores = score_in_batches(cross_reranker, max_context_length, ent_concat_inputs,
-                                                    is_context_encoder=False)
+                                                    is_context_encoder=False, scoring_batch_size=SCORING_BATCH_SIZE)
                 cross_ent_top1_score, cross_ent_top1_idx = torch.sort(cross_ent_scores, dim=1, descending=True)
                 cross_ent_top1_idx = cross_ent_top1_idx.cpu()[:, 0]
                 cross_ent_top1_score = cross_ent_top1_score.cpu()[:, 0]
