@@ -158,6 +158,8 @@ def evaluate(cross_reranker,
             # Get nearest mentions
             topk_defined_nn_idxs = cross_men_topk_idxs[men_idx][:bi_valid_nn_count[men_idx]]
             m_m_idxs = bi_men_idxs[men_idx, topk_defined_nn_idxs] + n_entities  # Mentions added at an offset of maximum entities
+            if len(topk_defined_nn_idxs) == 1:
+                m_m_idxs = [m_m_idxs]
             m_m_scores = cross_men_topk_scores[men_idx][:bi_valid_nn_count[men_idx]]
         # Add edges to the graphs
         for k in joint_graphs:

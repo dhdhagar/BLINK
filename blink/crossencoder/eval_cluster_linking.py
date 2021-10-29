@@ -263,7 +263,7 @@ def main(params):
                 cross_ent_top1_score = cross_ent_top1_score.cpu()[:, 0]
                 logger.info('Eval: Scoring done')
             # Pickle the scores and nearest indexes
-            print("Saving cross-encoder scores and indexes...")
+            logger.info("Saving cross-encoder scores and indexes...")
             with open(score_path, 'wb') as write_handle:
                 pickle.dump({
                     'cross_men_topk_idxs': cross_men_topk_idxs,
