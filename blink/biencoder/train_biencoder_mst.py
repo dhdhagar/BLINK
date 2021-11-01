@@ -727,8 +727,10 @@ def main(params):
                     }, pos_neg_loss=params["pos_neg_loss"])
 
             loss = ((loss_dual_negs * len(context_inputs) + loss_ent_negs * len(skipped_context_inputs)) / (len(context_inputs) + len(skipped_context_inputs))) / grad_acc_steps
-            tr_loss += loss.item()
-            loss.backward()
+
+            if isinstance(loss, torch.Tensor):
+                tr_loss += loss.item()
+                loss.backward()
 
             n_print_iters = params["print_interval"] * grad_acc_steps
             if (step + 1) % n_print_iters == 0:
