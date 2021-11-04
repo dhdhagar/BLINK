@@ -445,12 +445,14 @@ def get_biencoder_nns(bi_reranker, biencoder_indices_path, entity_dictionary, en
     return biencoder_train_idxs, biencoder_valid_idxs
 
 
-def drop_entities_for_discovery_training(entity_dictionary, pickle_src_path, logger, ent_drop_prop = 0.1):
+def drop_entities_for_discovery_training(entity_dictionary, drop_set_fname, logger, ent_drop_prop = 0.1):
     # Drop a proportion of unique entities seen in the dev/test set from the entity dictionary
     # in order to train a new model without information leakage
-    drop_set_pkl_path = os.path.join(pickle_src_path,
-                                     'drop_set_mention_data.pickle')  # Dev/test mention data
-    with open(drop_set_pkl_path, 'rb') as read_handle:
+    # drop_set_fname: Expects either test_processed_data.pickle or valid_process_data.pickle
+
+    if not os.path.isfile(drop_set_fname):
+        raise ValueError("Invalid --drop_set path provided to dev/test mention data")
+    with open(drop_set_fname, 'rb') as read_handle:
         drop_set_data = pickle.load(read_handle)
     drop_set_mention_gold_cui_idxs = list(map(lambda x: x['label_idxs'][0], drop_set_data))
     ents_in_data = np.unique(drop_set_mention_gold_cui_idxs)
@@ -464,7 +466,7 @@ def drop_entities_for_discovery_training(entity_dictionary, pickle_src_path, log
     keep_mask = np.ones(len(entity_dictionary), dtype='bool')
     keep_mask[dropped_ent_idxs] = False
     entity_dictionary = np.array(entity_dictionary)[keep_mask]
-    return entity_dictionary
+    return entity_dictionary, dropped_ent_idxs
 
 
 def load_training_data(bi_tokenizer,
@@ -490,7 +492,7 @@ def load_training_data(bi_tokenizer,
     # Load train data
     train_tensor_data_pkl_path = os.path.join(pickle_src_path, 'train_tensor_data.pickle')
     train_processed_data_pkl_path = os.path.join(pickle_src_path, 'train_processed_data.pickle')
-    if os.path.isfile(train_tensor_data_pkl_path) and os.path.isfile(train_processed_data_pkl_path):
+    if not params["drop_entities"] and os.path.isfile(train_tensor_data_pkl_path) and os.path.isfile(train_processed_data_pkl_path):
         print("Loading stored processed train data...")
         with open(train_tensor_data_pkl_path, 'rb') as read_handle:
             train_tensor_data = pickle.load(read_handle)
@@ -513,7 +515,9 @@ def load_training_data(bi_tokenizer,
         # For discovery experiment: Drop entities used in training that were dropped randomly from dev/test set
         if params["drop_entities"]:
             assert entity_dictionary is not None
-            entity_dictionary = drop_entities_for_discovery_training(entity_dictionary, pickle_src_path, logger)
+            entity_dictionary = drop_entities_for_discovery_training(entity_dictionary,
+                                                                     params["drop_set"],
+                                                                     logger)
 
         train_processed_data, entity_dictionary, train_tensor_data = data_process.process_mention_data(
             train_samples,
