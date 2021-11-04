@@ -466,7 +466,7 @@ def drop_entities_for_discovery_training(entity_dictionary, drop_set_fname, logg
     keep_mask = np.ones(len(entity_dictionary), dtype='bool')
     keep_mask[dropped_ent_idxs] = False
     entity_dictionary = np.array(entity_dictionary)[keep_mask]
-    return entity_dictionary, dropped_ent_idxs
+    return entity_dictionary
 
 
 def load_training_data(bi_tokenizer,
