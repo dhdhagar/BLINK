@@ -338,6 +338,12 @@ class BlinkParser(argparse.ArgumentParser):
             "--skip_epoch_eval", action="store_true",
             help="Whether to skip epoch evaluations.",
         )
+        parser.add_argument(
+            "--drop_set",
+            default=None,
+            type=str,
+            help="Mention data set used to drop random entites from in order to train model for Entity Discovery",
+        )
 
 
     def add_eval_args(self, args=None):
