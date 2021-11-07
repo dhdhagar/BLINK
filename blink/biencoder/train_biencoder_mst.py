@@ -275,8 +275,12 @@ def main(params):
             # For discovery experiment: Drop entities used in training that were dropped randomly from dev/test set
             if params["drop_entities"]:
                 assert entity_dictionary_loaded
-                drop_set_pkl_path = os.path.join(pickle_src_path, 'drop_set_mention_data.pickle') # Dev or test mention data
-                with open(drop_set_pkl_path, 'rb') as read_handle:
+                # Load either test_processed_data.pickle or valid_process_data.pickle to first calculate the unique
+                # entities for those mentions, and then drop 10% of those entities from the dictionary
+                drop_set_path = params["drop_set"] if params["drop_set"] is not None else os.path.join(pickle_src_path, 'drop_set_mention_data.pickle')
+                if not os.path.isfile(drop_set_path):
+                    raise ValueError("Invalid or no --drop_set path provided to dev/test mention data")
+                with open(drop_set_path, 'rb') as read_handle:
                     drop_set_data = pickle.load(read_handle)
                 drop_set_mention_gold_cui_idxs = list(map(lambda x: x['label_idxs'][0], drop_set_data))
                 ents_in_data = np.unique(drop_set_mention_gold_cui_idxs)
