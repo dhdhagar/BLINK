@@ -237,7 +237,7 @@ class BlinkParser(argparse.ArgumentParser):
             help="Interval for evaluation during training",
         )
         parser.add_argument(
-            "--save_interval", type=int, default=-1,
+            "--save_interval", type=float, default=-1,
             help="Interval for during-training model saving (value between 0 and 1). -1 prevents model saving during training."
         )
         parser.add_argument(
