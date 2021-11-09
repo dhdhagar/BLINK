@@ -818,7 +818,8 @@ def execute_training_step(mention_idxs,
                           cross_reranker,
                           max_context_length,
                           grad_acc_steps,
-                          n_gpu):
+                          n_gpu,
+                          no_sigmoid=False):
     # Handle variable mention-negatives lengths for different training queries in the batch
     min_negs = float('inf')
     dual_negs_mask = np.array([True] * len(mention_idxs))  # Mask to keep queries with both ent and men negs
@@ -840,7 +841,8 @@ def execute_training_step(mention_idxs,
                                          negative_ent_inputs.shape[0] * negative_ent_inputs.shape[1] >= n_gpu
         if data_parallel_batch_size_check:
             loss_dual_negs = cross_reranker(positive_scores, negative_men_inputs,
-                                            negative_ent_inputs, max_context_length)
+                                            negative_ent_inputs, max_context_length,
+                                            no_sigmoid=no_sigmoid)
     if skipped > 0:
         positive_scores = batch_positive_scores[~dual_negs_mask]
         negative_men_inputs = None
@@ -848,7 +850,8 @@ def execute_training_step(mention_idxs,
         data_parallel_batch_size_check = negative_ent_inputs.shape[0] * negative_ent_inputs.shape[1] >= n_gpu
         if data_parallel_batch_size_check:
             loss_ent_negs = cross_reranker(positive_scores, negative_men_inputs,
-                                           negative_ent_inputs, max_context_length)
+                                           negative_ent_inputs, max_context_length,
+                                           no_sigmoid=no_sigmoid)
     loss = ((loss_dual_negs * (len(mention_idxs) - skipped) + loss_ent_negs * skipped) / len(mention_idxs)) / grad_acc_steps
     loss.backward()
     return loss.item()
@@ -888,6 +891,7 @@ def main(params):
     cross_tokenizer = cross_reranker.tokenizer
     device = cross_reranker.device
     n_gpu = cross_reranker.n_gpu
+    no_sigmoid_train = params["no_sigmoid_train"]
 
     # Training params
     grad_acc_steps = params["gradient_accumulation_steps"]
@@ -1144,6 +1148,7 @@ def main(params):
                 }, write_handle, protocol=pickle.HIGHEST_PROTOCOL)
             logger.info("Checkpoint saved!")
 
+        save_intervals_done = 0
         tr_loss = 0
         cross_model.train()
         for step, batch in enumerate(train_dataloader):
@@ -1169,7 +1174,8 @@ def main(params):
                                                cross_reranker,
                                                max_context_length,
                                                grad_acc_steps,
-                                               n_gpu)
+                                               n_gpu,
+                                               no_sigmoid=no_sigmoid_train)
             tr_loss += total_loss
 
             n_print_iters = params["print_interval"] * grad_acc_steps
@@ -1207,6 +1213,19 @@ def main(params):
                              k_biencoder=64)
                     cross_model.train()
                     logger.info("\n")
+
+            if params["save_interval"] != -1:
+                train_prop_done = (step + 1) / len(train_dataloader)
+                # Skip saving the model at 100% completion since we do that regardless in the outer loop
+                if train_prop_done != 1 and train_prop_done >= (save_intervals_done + 1) * params["save_interval"]:
+                    epoch_output_folder_path = os.path.join(
+                        model_output_path, f"epoch_{epoch_idx}_{save_intervals_done}"
+                    )
+                    save_intervals_done += 1
+                    logger.info(
+                        f"***** Saving fine-tuned model (at {save_intervals_done * params['save_interval'] * 100}%) *****")
+                    utils.save_model(cross_model, cross_tokenizer, epoch_output_folder_path)
+                    logger.info(f"Model saved at {epoch_output_folder_path}")
 
         logger.info("***** Saving fine-tuned model *****")
         epoch_output_folder_path = os.path.join(

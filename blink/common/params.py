@@ -237,8 +237,8 @@ class BlinkParser(argparse.ArgumentParser):
             help="Interval for evaluation during training",
         )
         parser.add_argument(
-            "--save_interval", type=int, default=1, 
-            help="Interval for model saving"
+            "--save_interval", type=int, default=-1,
+            help="Interval for during-training model saving (value between 0 and 1). -1 prevents model saving during training."
         )
         parser.add_argument(
             "--warmup_proportion",
@@ -343,6 +343,10 @@ class BlinkParser(argparse.ArgumentParser):
             default=None,
             type=str,
             help="Mention data set used to drop random entites from in order to train model for Entity Discovery",
+        )
+        parser.add_argument(
+            "--no_sigmoid_train", action="store_true",
+            help="Whether to force-prevent the use of sigmoid on the logits computed in cross-encoder training.",
         )
 
 

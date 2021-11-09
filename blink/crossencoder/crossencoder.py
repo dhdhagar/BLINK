@@ -207,7 +207,7 @@ class CrossEncoderRanker(torch.nn.Module):
             fp16=self.params.get("fp16"),
         )
 
-    def score_candidate(self, text_vecs, context_len, is_context_encoder=True):
+    def score_candidate(self, text_vecs, context_len, is_context_encoder=True, no_sigmoid=False):
         # Encode contexts first
         num_cand = text_vecs.size(1)
         text_vecs = text_vecs.reshape(-1, text_vecs.size(-1))
@@ -215,20 +215,22 @@ class CrossEncoderRanker(torch.nn.Module):
             text_vecs, self.NULL_IDX, context_len,
         )
         embedding_ctxt = self.model(token_idx_ctxt, segment_idx_ctxt, mask_ctxt, is_ctxt=is_context_encoder)
-        if self.add_sigmoid:
+        if not no_sigmoid and self.add_sigmoid:
             embedding_ctxt = torch.sigmoid(embedding_ctxt)
         return embedding_ctxt.view(-1, num_cand)
 
-    def forward(self, pos_scores, neg_ctxt_vecs, neg_cand_vecs, context_len):
+    def forward(self, pos_scores, neg_ctxt_vecs, neg_cand_vecs, context_len, no_sigmoid=False):
         n_negs = neg_cand_vecs.size(1) + (0 if neg_ctxt_vecs is None else neg_ctxt_vecs.size(1))
         labels = torch.tensor([[1] + [0] * n_negs] * len(pos_scores),
                               dtype=torch.float32).cuda()  # Shape: B x (1+knn_negs)
         cand_scores = self.score_candidate(neg_cand_vecs, context_len,
-                                           is_context_encoder=False)  # Shape: B x knn_cand_negs
+                                           is_context_encoder=False,
+                                           no_sigmoid=no_sigmoid)  # Shape: B x knn_cand_negs
         scores = torch.cat((pos_scores, cand_scores), dim=1)  # Shape: B x (1+knn_cand_negs)
         if neg_ctxt_vecs is not None:
             ctxt_scores = self.score_candidate(neg_ctxt_vecs, context_len,
-                                               is_context_encoder=True)  # Shape: B x knn_ctxt_negs
+                                               is_context_encoder=True,
+                                               no_sigmoid=no_sigmoid)  # Shape: B x knn_ctxt_negs
             scores = torch.cat((scores, ctxt_scores), dim=1)  # Shape: B x (1+knn_cand_negs+knn_ctxt_negs)
         if self.pos_neg_loss:
             loss = torch.mean(torch.sum(-torch.log(torch.softmax(scores, dim=1) + 1e-8) * labels - torch.log(
