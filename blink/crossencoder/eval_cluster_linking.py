@@ -244,6 +244,8 @@ def run_discovery_experiment(joint_graphs, dropped_ent_idxs, mention_gold_entiti
         best_result = -1.
         best_config = None
         for k in joint_graphs:
+            if k == 0:
+                continue
             # First run the baseline (i.e. with no entity edges), which stores results in the passed arg
             discovery_helper(baselines, drop_all_entities=True)
             if (exact_knn is None and 0 < k <= params["knn"]) or (exact_knn is not None and k == exact_knn):
