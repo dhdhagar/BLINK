@@ -90,7 +90,7 @@ def get_query_nn(knn,
     return np.array(nn_idxs[:knn], dtype=np.int64), np.array(scores[:knn])
 
 
-def partition_graph(graph, n_entities, directed, return_clusters=False):
+def partition_graph(graph, n_entities, directed, return_clusters=False, exclude=set(), threshold=None):
     """
     Parameters
     ----------
@@ -102,6 +102,11 @@ def partition_graph(graph, n_entities, directed, return_clusters=False):
         whether the graph construction should be directed or undirected
     return_clusters : bool
         flag to indicate if clusters need to be returned from the partition
+    exclude : set
+        vertices (both rows and columns) whose edges should be dropped in the graph
+    threshold : float
+        similarity value below which edges should be dropped
+
 
     Returns
     -------
@@ -117,7 +122,9 @@ def partition_graph(graph, n_entities, directed, return_clusters=False):
         cols,
         data,
         n_entities,
-        directed
+        directed,
+        exclude=exclude,
+        threshold=threshold
     )
     # Construct the partitioned graph
     partitioned_graph = coo_matrix(
