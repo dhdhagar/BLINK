@@ -16,9 +16,11 @@ import numpy as np
 from tqdm import tqdm
 import pickle
 import copy
+from sklearn.cluster import KMeans
 
 import blink.biencoder.data_process_mult as data_process
 from blink.biencoder.eval_cluster_linking import analyzeClusters, partition_graph
+from blink.biencoder.eval_entity_discovery import analyzeClusters as analyze_discovery_clusters
 import blink.candidate_ranking.utils as utils
 from blink.biencoder.biencoder import BiEncoderRanker
 from blink.crossencoder.crossencoder import CrossEncoderRanker
@@ -116,6 +118,151 @@ def filter_by_context_doc_id(mention_idxs, doc_id, doc_id_list, return_numpy=Fal
     return mention_idxs, mask
 
 
+def get_entity_idxs_to_drop(processed_data, params, logger):
+    print("******** Discovery ********")
+    # Proportion of unique entities in the mention set to drop
+    ent_drop_prop = params["ent_drop_prop"]
+    mention_gold_entities = list(map(lambda x: x['label_idxs'][0], processed_data))
+    ents_in_data = np.unique(mention_gold_entities)
+    logger.info(f"Dropping {ent_drop_prop * 100}% of {len(ents_in_data)} entities found in mention set")
+
+    # Get entity idxs to drop
+    n_ents_dropped = int(ent_drop_prop * len(ents_in_data))
+    rng = np.random.default_rng(seed=17)  # Random number generator
+    dropped_ent_idxs = rng.choice(ents_in_data, size=n_ents_dropped, replace=False)
+    set_dropped_ent_idxs = set(dropped_ent_idxs)
+
+    # Calculate number of mentions without gold entities after dropping
+    n_mentions_wo_gold_ents = sum([1 if x in set_dropped_ent_idxs else 0 for x in mention_gold_entities])
+    logger.info(f"Dropped {n_ents_dropped} entities")
+    logger.info(f"=> Mentions without gold entities = {n_mentions_wo_gold_ents}")
+    print("*****************")
+    return set_dropped_ent_idxs, n_ents_dropped, n_mentions_wo_gold_ents, mention_gold_entities
+
+
+def run_inference(entity_dictionary,
+                  processed_data,
+                  results,
+                  result_overview,
+                  joint_graphs,
+                  n_entities,
+                  time_start,
+                  output_path,
+                  bi_recall,
+                  k_biencoder,
+                  logger):
+    knn_fetch_time = time.time() - time_start
+    n_graphs_processed = 0
+    graph_processing_time = time.time()
+    for mode in results:
+        print(f'\nEvaluation mode: {mode.upper()}')
+        for k in joint_graphs:
+            if k == 0 and mode == 'undirected' and len(results) > 1:
+                continue  # Since @k=0 both modes are equivalent, so skip for one mode
+            logger.info(f"\nGraph (k={k}):")
+            # Partition graph based on cluster-linking constraints
+            partitioned_graph, clusters = partition_graph(
+                joint_graphs[k], n_entities, directed=(mode == 'directed'), return_clusters=True)
+            # Infer predictions from clusters
+            result = analyzeClusters(clusters, entity_dictionary, processed_data, k)
+            # Store result
+            results[mode].append(result)
+            n_graphs_processed += 1
+
+    avg_graph_processing_time = (time.time() - graph_processing_time) / n_graphs_processed
+    avg_per_graph_time = (knn_fetch_time + avg_graph_processing_time) / 60
+
+    execution_time = (time.time() - time_start) / 60
+    # Store results
+    output_file_name = os.path.join(
+        output_path, f"eval_results_{__import__('calendar').timegm(__import__('time').gmtime())}")
+
+    if bi_recall is not None:
+        result_overview[f'biencoder recall@{k_biencoder}'] = f"{bi_recall * 100} %"
+    else:
+        logger.info("Recall data not available (graphs were loaded from disk)")
+
+    for mode in results:
+        mode_results = results[mode]
+        result_overview[mode] = {}
+        for r in mode_results:
+            k = r['knn_mentions']
+            result_overview[mode][f'accuracy@knn{k}'] = r['accuracy']
+            logger.info(f"{mode} accuracy@knn{k} = {r['accuracy']}")
+            output_file = f'{output_file_name}-{mode}-{k}.json'
+            with open(output_file, 'w') as f:
+                json.dump(r, f, indent=2)
+                print(f"\nPredictions ({mode}) @knn{k} saved at: {output_file}")
+    with open(f'{output_file_name}.json', 'w') as f:
+        json.dump(result_overview, f, indent=2)
+        print(f"\nPredictions overview saved at: {output_file_name}.json")
+
+    logger.info("\nThe avg. per graph evaluation time is {} minutes\n".format(avg_per_graph_time))
+    logger.info("\nThe total evaluation took {} minutes\n".format(execution_time))
+
+
+def run_discovery_experiment(joint_graphs, dropped_ent_idxs, mention_gold_entities, n_entities, n_mentions, data_split,
+                             results, output_path, time_start, params, logger):
+    def discovery_helper(results, best_result=None, best_config=None, drop_all_entities=False):
+        drop_set = dropped_ent_idxs
+        if drop_all_entities:
+            drop_set = set([i for i in range(n_entities)])
+        if exact_threshold is not None:
+            thresholds = np.array([0, exact_threshold])
+        else:
+            thresholds = np.sort(np.concatenate(
+                ([0], k_means.fit(joint_graphs[k]['data'].reshape(-1, 1)).cluster_centers_.flatten())))
+        for thresh in thresholds:
+            print()
+            logger.info("Partitioning...")
+            logger.info(f"{mode.upper()}, k={k}, threshold={thresh}")
+            # Partition graph based on cluster-linking constraints
+            partitioned_graph, clusters = partition_graph(
+                joint_graphs[k], n_entities, directed=(mode == 'directed'), return_clusters=True,
+                exclude=drop_set, threshold=thresh)
+            # Analyze cluster against gold clusters
+            result = analyze_discovery_clusters(clusters, mention_gold_entities, n_entities, n_mentions, logger)
+            results[f'({mode}, {k}, {thresh})'] = result
+            if best_result is not None:
+                if thresh != 0 and result['average'] > best_result:
+                    best_result = result['average']
+                    best_config = (mode, k, thresh)
+        return best_result, best_config
+
+    graph_mode = ['directed', 'undirected']
+    # Number of similarity thresholds to try in order to find best clustering; Default=10
+    n_thresholds = params['n_thresholds']
+    k_means = KMeans(n_clusters=n_thresholds, random_state=17)
+    # Specific threshold to run the experiment with, if the param is passed
+    exact_threshold = params.get('exact_threshold', None)
+    # Specific value of K defining the number of mention nearest-neighbors used for clustering, if the param is passed
+    exact_knn = params.get('exact_knn', None)
+    # Store the baseline results
+    baselines = {}
+
+    for mode in graph_mode:
+        best_result = -1.
+        best_config = None
+        for k in joint_graphs:
+            # First run the baseline (i.e. with no entity edges), which stores results in the passed arg
+            discovery_helper(baselines, drop_all_entities=True)
+            if (exact_knn is None and 0 < k <= params["knn"]) or (exact_knn is not None and k == exact_knn):
+                best_result, best_config = discovery_helper(results, best_result, best_config)
+        results[f'best_{mode}_config'] = best_config
+        results[f'best_{mode}_result'] = best_result
+        results['baselines'] = baselines
+
+    # Store results
+    output_file_name = os.path.join(
+        output_path, f"{data_split}_eval_discovery_{__import__('calendar').timegm(__import__('time').gmtime())}.json")
+
+    with open(output_file_name, 'w') as f:
+        json.dump(results, f, indent=2)
+        print(f"\nAnalysis saved at: {output_file_name}")
+    execution_time = (time.time() - time_start) / 60
+    logger.info(f"\nTotal time taken: {execution_time} minutes\n")
+
+
 def main(params):
     # Parameter initializations
     logger = utils.get_logger(params["output_path"])
@@ -135,6 +282,7 @@ def main(params):
     max_k = params["knn"]  # Maximum k-NN graph to build for evaluation
     use_types = params["use_types"]
     within_doc = params["within_doc"]
+    discovery_mode = params["discovery"]
 
     # Bi-encoder model
     biencoder_params = copy.deepcopy(params)
@@ -178,6 +326,12 @@ def main(params):
     dict_vecs = torch.tensor(list(map(lambda x: x['ids'], entity_dictionary)), dtype=torch.long)
     # Store query vectors
     men_vecs = tensor_data[:][0]
+
+    discovery_entities = []
+    if discovery_mode:
+        discovery_entities, n_ents_dropped, n_mentions_wo_gold_ents, mention_gold_entities = get_entity_idxs_to_drop(
+            processed_data, params,
+            logger)
 
     context_doc_ids = None
     if within_doc:
@@ -259,8 +413,18 @@ def main(params):
                 cross_ent_scores = score_in_batches(cross_reranker, max_context_length, ent_concat_inputs,
                                                     is_context_encoder=False, scoring_batch_size=SCORING_BATCH_SIZE)
                 cross_ent_top1_score, cross_ent_top1_idx = torch.sort(cross_ent_scores, dim=1, descending=True)
-                cross_ent_top1_idx = cross_ent_top1_idx.cpu()[:, 0]
-                cross_ent_top1_score = cross_ent_top1_score.cpu()[:, 0]
+                cross_ent_top1_idx = cross_ent_top1_idx.cpu()
+                cross_ent_top1_score = cross_ent_top1_score.cpu()
+                if discovery_mode:
+                    # Replace the first value in each row with an entity not in the drop set
+                    for i in range(cross_ent_top1_idx.shape[0]):
+                        for j in range(cross_ent_top1_idx.shape[1]):
+                            if cross_ent_top1_idx[i, j] not in discovery_entities:
+                                cross_ent_top1_idx[i, 0] = cross_ent_top1_idx[i, j]
+                                cross_ent_top1_score[i, 0] = cross_ent_top1_score[i, j]
+                                break
+                cross_ent_top1_idx = cross_ent_top1_idx[:, 0]
+                cross_ent_top1_score = cross_ent_top1_score[:, 0]
                 logger.info('Eval: Scoring done')
             # Pickle the scores and nearest indexes
             logger.info("Saving cross-encoder scores and indexes...")
@@ -319,66 +483,49 @@ def main(params):
             logger.info(f"Eval: Biencoder recall@{k_biencoder} = {bi_recall * 100}%")
             exit()
 
-    # Partition graphs and analyze clusters for final predictions
     graph_mode = params.get('graph_mode', None)
-    result_overview, results = {
-        'n_entities': n_entities,
-        'n_mentions': n_mentions
-    }, {}
-    if graph_mode is None or graph_mode not in ['directed', 'undirected']:
-        results['directed'], results['undirected'] = [], []
+
+    if discovery_mode:
+        # Run the entity discovery experiment
+        results = {
+            'data_split': data_split.upper(),
+            'n_entities': n_entities,
+            'n_mentions': n_mentions,
+            'n_entities_dropped': f"{n_ents_dropped} ({params['ent_drop_prop'] * 100}%)",
+            'n_mentions_wo_gold_entities': n_mentions_wo_gold_ents
+        }
+        run_discovery_experiment(joint_graphs,
+                                 discovery_entities,
+                                 mention_gold_entities,
+                                 n_entities,
+                                 n_mentions,
+                                 data_split,
+                                 results,
+                                 output_path,
+                                 time_start,
+                                 params,
+                                 logger)
     else:
-        results[graph_mode] = []
-
-    knn_fetch_time = time.time() - time_start
-    graph_processing_time = time.time()
-    n_graphs_processed = 0.
-
-    for mode in results:
-        print(f'\nEvaluation mode: {mode.upper()}')
-        for k in joint_graphs:
-            if k == 0 and mode == 'undirected' and len(results) > 1:
-                continue  # Since @k=0 both modes are equivalent, so skip for one mode
-            logger.info(f"\nGraph (k={k}):")
-            # Partition graph based on cluster-linking constraints
-            partitioned_graph, clusters = partition_graph(
-                joint_graphs[k], n_entities, directed=(mode == 'directed'), return_clusters=True)
-            # Infer predictions from clusters
-            result = analyzeClusters(clusters, entity_dictionary, processed_data, k)
-            # Store result
-            results[mode].append(result)
-            n_graphs_processed += 1
-
-    avg_graph_processing_time = (time.time() - graph_processing_time) / n_graphs_processed
-    avg_per_graph_time = (knn_fetch_time + avg_graph_processing_time) / 60
-
-    execution_time = (time.time() - time_start) / 60
-    # Store results
-    output_file_name = os.path.join(
-        output_path, f"eval_results_{__import__('calendar').timegm(__import__('time').gmtime())}")
-
-    if bi_recall is not None:
-        result_overview[f'biencoder recall@{k_biencoder}'] = f"{bi_recall * 100} %"
-    else:
-        logger.info("Recall data not available (graphs were loaded from disk)")
-
-    for mode in results:
-        mode_results = results[mode]
-        result_overview[mode] = {}
-        for r in mode_results:
-            k = r['knn_mentions']
-            result_overview[mode][f'accuracy@knn{k}'] = r['accuracy']
-            logger.info(f"{mode} accuracy@knn{k} = {r['accuracy']}")
-            output_file = f'{output_file_name}-{mode}-{k}.json'
-            with open(output_file, 'w') as f:
-                json.dump(r, f, indent=2)
-                print(f"\nPredictions ({mode}) @knn{k} saved at: {output_file}")
-    with open(f'{output_file_name}.json', 'w') as f:
-        json.dump(result_overview, f, indent=2)
-        print(f"\nPredictions overview saved at: {output_file_name}.json")
-
-    logger.info("\nThe avg. per graph evaluation time is {} minutes\n".format(avg_per_graph_time))
-    logger.info("\nThe total evaluation took {} minutes\n".format(execution_time))
+        # Run entity linking inference
+        result_overview, results = {
+                                       'n_entities': n_entities,
+                                       'n_mentions': n_mentions
+                                   }, {}
+        if graph_mode is None or graph_mode not in ['directed', 'undirected']:
+            results['directed'], results['undirected'] = [], []
+        else:
+            results[graph_mode] = []
+        run_inference(entity_dictionary,
+                      processed_data,
+                      results,
+                      result_overview,
+                      joint_graphs,
+                      n_entities,
+                      time_start,
+                      output_path,
+                      bi_recall,
+                      k_biencoder,
+                      logger)
 
 
 if __name__ == "__main__":

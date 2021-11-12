@@ -433,26 +433,35 @@ class BlinkParser(argparse.ArgumentParser):
         )
         # Entity discovery
         parser.add_argument(
+            "--discovery", action="store_true",
+            help="Whether to run cross-encoder eval for entity discovery experiments",
+        )
+        parser.add_argument(
+            "--ent_drop_prop", type=float, default=0.1,
+            help="Discovery: Proportion of unique entities to drop from the dataset in order to evaluate their discovery.",
+        )
+        parser.add_argument(
             "--n_thresholds", type=int, default=10,
-            help="Number of thresholds to try out for entity discovery",
+            help="Discovery: Number of thresholds to try out for entity discovery",
         )
         parser.add_argument(
             "--exact_threshold", type=float, default=None,
-            help="Exact value of the similarity threshold to run the experiment against",
+            help="Discovery: Exact value of the similarity threshold to run the experiment against",
         )
         parser.add_argument(
             "--exact_knn", type=int, default=None,
-            help="Exact value of the knn graph to run the experiment against",
+            help="Discovery: Exact value of the knn graph to run the experiment against",
         )
+        parser.add_argument(
+            "--drop_all_entities", action="store_true",
+            help="Discovery: Whether to run experiments without any entities (usually for baseline)",
+        )
+        # /Entity Discovery
         parser.add_argument(
             "--embed_data_path",
             default=None,
             type=str,
             help="The directory from which to load the embeddings data (embed_data.t7).",
-        )
-        parser.add_argument(
-            "--drop_all_entities", action="store_true",
-            help="Whether to run the discovery without any entities (usually for baseline)",
         )
         parser.add_argument(
             "--within_doc", action="store_true",
