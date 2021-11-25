@@ -175,7 +175,7 @@ def main(params):
 
     pickle_src_path = params["pickle_src_path"]
 
-    fname = os.path.join(params["data_path"], "candidates_train_top64.t7") # train.t7
+    fname = os.path.join(params["biencoder_indices_path"], "candidates_train_top64.t7") # train.t7
     train_data = torch.load(fname) # Contains the top-64 indices for each mention query and the ground truth label if it exists in the candidate set
     entity_dictionary, tensor_data, processed_data = load_data('train',
                                                                tokenizer,
@@ -224,7 +224,7 @@ def main(params):
     max_n = 2048
     if params["debug"]:
         max_n = 200
-    fname = os.path.join(params["data_path"], "candidates_valid_top64.t7")
+    fname = os.path.join(params["biencoder_indices_path"], "candidates_valid_top64.t7")
     valid_data = torch.load(fname)
 
     _, tensor_data, processed_data = load_data('valid',
