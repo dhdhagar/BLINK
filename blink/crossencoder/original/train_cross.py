@@ -247,6 +247,7 @@ def main(params):
             train_data['candidates'][i][-1] = gold_idx
         cands = list(map(lambda x: dict_vecs[x], train_data['candidates'][i]))
         candidate_input.append(cands)
+    candidate_input = np.array(candidate_input)
     context_input = tensor_data[:][0]
     label_input = train_data['labels']
 
