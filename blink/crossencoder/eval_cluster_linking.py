@@ -266,10 +266,21 @@ def run_discovery_experiment(joint_graphs, dropped_ent_idxs, mention_gold_entiti
     logger.info(f"\nTotal time taken: {execution_time} minutes\n")
 
 
-def save_topk_biencoder_cands(bi_reranker, entity_dictionary, entity_dict_vecs,
+def save_topk_biencoder_cands(bi_reranker,
                              use_types, logger, n_gpu, params,
                              bi_tokenizer, max_context_length,
                              max_cand_length, pickle_src_path, topk=64):
+    entity_dictionary = load_data('train',
+                                  bi_tokenizer,
+                                  max_context_length,
+                                  max_cand_length,
+                                  1,
+                                  pickle_src_path,
+                                  params,
+                                  logger,
+                                  return_dict_only=True)
+    entity_dict_vecs = torch.tensor(list(map(lambda x: x['ids'], entity_dictionary)), dtype=torch.long)
+
     logger.info('Biencoder: Embedding and indexing entity dictionary')
     if use_types:
         _, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(
@@ -386,6 +397,14 @@ def main(params):
     if cross_reranker.n_gpu > 0:
         torch.cuda.manual_seed_all(seed)
 
+    # The below code is to generate the candidates for cross-encoder training and inference
+    if params["save_topk_result"]:
+        save_topk_biencoder_cands(bi_reranker,
+                                  use_types, logger, n_gpu, params,
+                                  bi_tokenizer, max_context_length,
+                                  max_cand_length, pickle_src_path, topk=64)
+        exit()
+
     data_split = params["data_split"]
     entity_dictionary, tensor_data, processed_data = load_data(data_split,
                                                                bi_tokenizer,
@@ -401,14 +420,6 @@ def main(params):
     dict_vecs = torch.tensor(list(map(lambda x: x['ids'], entity_dictionary)), dtype=torch.long)
     # Store query vectors
     men_vecs = tensor_data[:][0]
-
-    # The below code is to generate the candidates for cross-encoder training and inference
-    if params["save_topk_result"]:
-        save_topk_biencoder_cands(bi_reranker, entity_dictionary, dict_vecs,
-                                 use_types, logger, n_gpu, params,
-                                 bi_tokenizer, max_context_length,
-                                 max_cand_length, pickle_src_path, topk=64)
-        exit()
 
     discovery_entities = []
     if discovery_mode:
