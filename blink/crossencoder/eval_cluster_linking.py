@@ -323,7 +323,7 @@ def save_topk_biencoder_cands(bi_reranker,
             _, bi_dict_nns = dict_index.search(men_embeddings, topk)
         else:
             bi_dict_nns = np.zeros((len(men_embeddings), topk), dtype=int)
-            for entity_type in dict_indexes:
+            for entity_type in men_idxs_by_type:
                 men_embeds_by_type = men_embeddings[men_idxs_by_type[entity_type]]
                 _, dict_nns_by_type = dict_indexes[entity_type].search(men_embeds_by_type, topk)
                 dict_nns_idxs = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], dict_nns_by_type)))
