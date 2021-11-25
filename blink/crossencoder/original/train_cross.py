@@ -30,7 +30,7 @@ def modify(context_input, candidate_input, max_seq_length):
     context_input = context_input.tolist()
     candidate_input = candidate_input.tolist()
 
-    for i in range(len(context_input)):
+    for i in tqdm(range(len(context_input)), desc="Concatenating"):
         cur_input = context_input[i]
         cur_candidate = candidate_input[i]
         mod_input = []
@@ -226,6 +226,7 @@ def main(params):
 
     pickle_src_path = params["pickle_src_path"]
 
+    logger.info("Loading train data...")
     fname = os.path.join(params["biencoder_indices_path"], "candidates_train_top64.t7") # train.t7
     train_data = torch.load(fname) # Contains the top-64 indices for each mention query and the ground truth label if it exists in the candidate set
     entity_dictionary, tensor_data, processed_data = load_data('train',
@@ -236,11 +237,12 @@ def main(params):
                                                                pickle_src_path,
                                                                params,
                                                                logger)
+    logger.info("Loaded")
     dict_vecs = list(map(lambda x: x['ids'], entity_dictionary))
 
     # If ground truth not in candidates, replace the last candidate with the ground truth
     candidate_input = []
-    for i in range(len(train_data['labels'])):
+    for i in tqdm(range(len(train_data['labels'])), desc="Processing"):
         if train_data['labels'][i] == -1:
             gold_idx = processed_data[i]["label_idxs"][0]
             train_data['labels'][i] = len(train_data['candidates'][i]) - 1
@@ -249,7 +251,7 @@ def main(params):
         candidate_input.append(cands)
     candidate_input = np.array(candidate_input)
     context_input = tensor_data[:][0]
-    label_input = train_data['labels']
+    label_input = torch.tensor(train_data['labels'])
 
     # train_data = torch.load(fname)
     # context_input = train_data["context_vecs"]
@@ -276,6 +278,7 @@ def main(params):
     max_n = 2048
     if params["debug"]:
         max_n = 200
+    logger.info("Loading valid data...")
     fname = os.path.join(params["biencoder_indices_path"], "candidates_valid_top64.t7")
     valid_data = torch.load(fname)
 
@@ -287,9 +290,10 @@ def main(params):
                                                pickle_src_path,
                                                params,
                                                logger)
+    logger.info("Loaded")
     candidate_input = []
     keep_mask = [True]*len(valid_data['labels'])
-    for i in range(len(valid_data['labels'])):
+    for i in tqdm(range(len(valid_data['labels'])), desc="Processing"):
         if valid_data['labels'][i] == -1:
             keep_mask[i] = False
             continue
@@ -297,7 +301,7 @@ def main(params):
         candidate_input.append(cands)
     candidate_input = np.array(candidate_input)
     context_input = tensor_data[:][0][keep_mask]
-    label_input = np.array(valid_data["labels"])[keep_mask]
+    label_input = torch.tensor(valid_data["labels"])[keep_mask]
 
     context_input = context_input[:max_n]
     candidate_input = candidate_input[:max_n]
