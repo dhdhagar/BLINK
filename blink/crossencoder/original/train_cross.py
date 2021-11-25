@@ -37,6 +37,8 @@ from blink.biencoder.zeshel_utils import DOC_PATH, WORLDS, world_to_id
 from blink.common.optimizer import get_bert_optimizer
 from blink.common.params import BlinkParser
 
+
+from blink.crossencoder.eval_cluster_linking import load_data
 from IPython import embed
 
 
@@ -169,12 +171,39 @@ def main(params):
 
     max_seq_length = params["max_seq_length"]
     context_length = params["max_context_length"]
-    
-    fname = os.path.join(params["data_path"], "train.t7")
-    train_data = torch.load(fname)
-    context_input = train_data["context_vecs"]
-    candidate_input = train_data["candidate_vecs"]
-    label_input = train_data["labels"]
+    candidate_length = params["max_context_length"]
+
+    pickle_src_path = params["pickle_src_path"]
+
+    fname = os.path.join(params["data_path"], "candidates_train_top64.t7") # train.t7
+    train_data = torch.load(fname) # Contains the top-64 indices for each mention query and the ground truth label if it exists in the candidate set
+    entity_dictionary, tensor_data, processed_data = load_data('train',
+                                                               tokenizer,
+                                                               context_length,
+                                                               candidate_length,
+                                                               1,
+                                                               pickle_src_path,
+                                                               params,
+                                                               logger)
+    dict_vecs = torch.tensor(list(map(lambda x: x['ids'], entity_dictionary)), dtype=torch.long)
+
+    # If ground truth not in candidates, replace the last candidate with the ground truth
+    candidate_input = []
+    for i in range(len(train_data['labels'])):
+        if train_data['labels'][i] == -1:
+            gold_idx = processed_data[i]["label_idxs"][0]
+            train_data['labels'][i] = len(train_data['candidates'][i]) - 1
+            train_data['candidates'][i][-1] = gold_idx
+        cands = list(map(lambda x: dict_vecs[x], train_data['candidates'][i]))
+        candidate_input.append(cands)
+    context_input = tensor_data[:][0]
+    label_input = train_data['labels']
+
+    # train_data = torch.load(fname)
+    # context_input = train_data["context_vecs"]
+    # candidate_input = train_data["candidate_vecs"]
+    # label_input = train_data["labels"]
+
     if params["debug"]:
         max_n = 200
         context_input = context_input[:max_n]
@@ -195,11 +224,32 @@ def main(params):
     max_n = 2048
     if params["debug"]:
         max_n = 200
-    fname = os.path.join(params["data_path"], "valid.t7")
+    fname = os.path.join(params["data_path"], "candidates_valid_top64.t7")
     valid_data = torch.load(fname)
-    context_input = valid_data["context_vecs"][:max_n]
-    candidate_input = valid_data["candidate_vecs"][:max_n]
-    label_input = valid_data["labels"][:max_n]
+
+    _, tensor_data, processed_data = load_data('valid',
+                                               tokenizer,
+                                               context_length,
+                                               candidate_length,
+                                               1,
+                                               pickle_src_path,
+                                               params,
+                                               logger)
+    candidate_input = []
+    keep_mask = [True]*len(valid_data['labels'])
+    for i in range(len(valid_data['labels'])):
+        if valid_data['labels'][i] == -1:
+            keep_mask[i] = False
+            continue
+        cands = list(map(lambda x: dict_vecs[x], valid_data['candidates'][i]))
+        candidate_input.append(cands)
+    candidate_input = np.array(candidate_input)
+    context_input = tensor_data[:][0][keep_mask]
+    label_input = np.array(valid_data["labels"])[keep_mask]
+
+    context_input = context_input[:max_n]
+    candidate_input = candidate_input[:max_n]
+    label_input = label_input[:max_n]
 
     context_input = modify(context_input, candidate_input, max_seq_length)
 
