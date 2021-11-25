@@ -10,6 +10,7 @@ import torch
 import random
 import time
 import numpy as np
+import pickle
 from tqdm import tqdm, trange
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, TensorDataset
 from pytorch_transformers.optimization import WarmupLinearSchedule
@@ -17,6 +18,7 @@ from blink.crossencoder.original.crossencoder import CrossEncoderRanker
 import blink.candidate_ranking.utils as utils
 from blink.common.optimizer import get_bert_optimizer
 from blink.common.params import BlinkParser
+import blink.biencoder.data_process_mult as data_process
 from IPython import embed
 
 
