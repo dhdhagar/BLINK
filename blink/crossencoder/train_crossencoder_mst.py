@@ -76,6 +76,7 @@ def score_in_batches(cross_reranker, max_context_length, cross_inputs, is_contex
         if batch_shape[0] < cross_reranker.n_gpu:
             reshaped = True
             # Repeat to get length of 0th dimension >= n_gpu
+            # NOTE: Needed to avoid CUDA error with data parallel
             repeat_shape = [math.ceil(cross_reranker.n_gpu / float(batch_shape[0])), *[1]*(len(batch_shape) - 1)]
             batch = batch.repeat(repeat_shape)[:cross_reranker.n_gpu]
         batch_scores = cross_reranker.score_candidate(batch.cuda(),
