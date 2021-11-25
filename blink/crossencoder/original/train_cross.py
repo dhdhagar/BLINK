@@ -236,7 +236,7 @@ def main(params):
                                                                pickle_src_path,
                                                                params,
                                                                logger)
-    dict_vecs = torch.tensor(list(map(lambda x: x['ids'], entity_dictionary)), dtype=torch.long)
+    dict_vecs = list(map(lambda x: x['ids'], entity_dictionary))
 
     # If ground truth not in candidates, replace the last candidate with the ground truth
     candidate_input = []
