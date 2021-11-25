@@ -247,6 +247,7 @@ def run_discovery_experiment(joint_graphs, dropped_ent_idxs, mention_gold_entiti
             if k == 0:
                 continue
             # First run the baseline (i.e. with no entity edges), which stores results in the passed arg
+            logger.info("Baseline:")
             discovery_helper(baselines, drop_all_entities=True)
             if (exact_knn is None and 0 < k <= params["knn"]) or (exact_knn is not None and k == exact_knn):
                 best_result, best_config = discovery_helper(results, best_result, best_config)
@@ -263,6 +264,78 @@ def run_discovery_experiment(joint_graphs, dropped_ent_idxs, mention_gold_entiti
         print(f"\nAnalysis saved at: {output_file_name}")
     execution_time = (time.time() - time_start) / 60
     logger.info(f"\nTotal time taken: {execution_time} minutes\n")
+
+
+def save_topk_biencoder_cands(bi_reranker, entity_dictionary, entity_dict_vecs,
+                             use_types, logger, n_gpu, params,
+                             bi_tokenizer, max_context_length,
+                             max_cand_length, pickle_src_path, topk=64):
+    logger.info('Biencoder: Embedding and indexing entity dictionary')
+    if use_types:
+        _, dict_indexes, dict_idxs_by_type = data_process.embed_and_index(
+            bi_reranker, entity_dict_vecs, encoder_type="candidate", n_gpu=n_gpu, corpus=entity_dictionary,
+            force_exact_search=True, batch_size=params['embed_batch_size'])
+    else:
+        _, dict_index = data_process.embed_and_index(bi_reranker, entity_dict_vecs,
+                                                     encoder_type="candidate", n_gpu=n_gpu,
+                                                     force_exact_search=True,
+                                                     batch_size=params['embed_batch_size'])
+    logger.info('Biencoder: Embedding and indexing finished')
+
+    for mode in ["train", "valid", "test"]:
+        logger.info(f"Biencoder: Fetching top-{topk} biencoder candidates for {mode} set")
+        _, tensor_data, processed_data = load_data(mode,
+                                                   bi_tokenizer,
+                                                   max_context_length,
+                                                   max_cand_length,
+                                                   1,
+                                                   pickle_src_path,
+                                                   params,
+                                                   logger)
+        men_vecs = tensor_data[:][0]
+
+        logger.info('Biencoder: Embedding mention data')
+        if use_types:
+            men_embeddings, _, men_idxs_by_type = data_process.embed_and_index(
+                bi_reranker, men_vecs, encoder_type="context", n_gpu=n_gpu, corpus=processed_data,
+                force_exact_search=True, batch_size=params['embed_batch_size'])
+        else:
+            men_embeddings = data_process.embed_and_index(bi_reranker, men_vecs,
+                                                                encoder_type="context", n_gpu=n_gpu,
+                                                                force_exact_search=True,
+                                                                batch_size=params['embed_batch_size'],
+                                                                only_embed=True)
+        logger.info('Biencoder: Embedding finished')
+
+        logger.info("Biencoder: Finding nearest entities for each mention...")
+        if not use_types:
+            _, bi_dict_nns = dict_index.search(men_embeddings, topk)
+        else:
+            bi_dict_nns = np.zeros((len(men_embeddings), topk), dtype=int)
+            for entity_type in dict_indexes:
+                men_embeds_by_type = men_embeddings[men_idxs_by_type[entity_type]]
+                _, dict_nns_by_type = dict_indexes[entity_type].search(men_embeds_by_type, topk)
+                dict_nns_idxs = np.array(list(map(lambda x: dict_idxs_by_type[entity_type][x], dict_nns_by_type)))
+                for i, idx in enumerate(men_idxs_by_type[entity_type]):
+                    bi_dict_nns[idx] = dict_nns_idxs[i]
+        logger.info("Biencoder: Search finished")
+
+        labels = [-1]*len(bi_dict_nns)
+        for men_idx in range(len(bi_dict_nns)):
+            gold_idx = processed_data[men_idx]["label_idxs"][0]
+            for i in range(len(bi_dict_nns[men_idx])):
+                if bi_dict_nns[men_idx][i] == gold_idx:
+                    labels[men_idx] = i
+                    break
+
+        logger.info(f"Biencoder: Saving top-{topk} biencoder candidates for {mode} set")
+        save_data_path = os.path.join(params['output_path'], f'candidates_{mode}_top{topk}.t7')
+        torch.save({
+            "mode": mode,
+            "candidates": bi_dict_nns,
+            "labels": labels
+        }, save_data_path)
+        logger.info("Biencoder: Saved")
 
 
 def main(params):
@@ -328,6 +401,14 @@ def main(params):
     dict_vecs = torch.tensor(list(map(lambda x: x['ids'], entity_dictionary)), dtype=torch.long)
     # Store query vectors
     men_vecs = tensor_data[:][0]
+
+    # The below code is to generate the candidates for cross-encoder training and inference
+    if params["save_topk_result"]:
+        save_topk_biencoder_cands(bi_reranker, entity_dictionary, dict_vecs,
+                                 use_types, logger, n_gpu, params,
+                                 bi_tokenizer, max_context_length,
+                                 max_cand_length, pickle_src_path, topk=64)
+        exit()
 
     discovery_entities = []
     if discovery_mode:
