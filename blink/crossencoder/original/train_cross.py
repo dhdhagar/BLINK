@@ -17,7 +17,6 @@ from blink.crossencoder.original.crossencoder import CrossEncoderRanker
 import blink.candidate_ranking.utils as utils
 from blink.common.optimizer import get_bert_optimizer
 from blink.common.params import BlinkParser
-from blink.crossencoder.eval_cluster_linking import load_data
 from IPython import embed
 
 
@@ -106,6 +105,79 @@ def get_scheduler(params, optimizer, len_train_data, logger):
     logger.info(" Num optimization steps = %d" % num_train_steps)
     logger.info(" Num warmup steps = %d", num_warmup_steps)
     return scheduler
+
+def load_data(data_split,
+              bi_tokenizer,
+              max_context_length,
+              max_cand_length,
+              knn,
+              pickle_src_path,
+              params,
+              logger,
+              return_dict_only=False):
+    entity_dictionary_loaded = False
+    entity_dictionary_pkl_path = os.path.join(pickle_src_path, 'entity_dictionary.pickle')
+    if os.path.isfile(entity_dictionary_pkl_path):
+        print("Loading stored processed entity dictionary...")
+        with open(entity_dictionary_pkl_path, 'rb') as read_handle:
+            entity_dictionary = pickle.load(read_handle)
+        entity_dictionary_loaded = True
+
+    if return_dict_only and entity_dictionary_loaded:
+        return entity_dictionary
+
+    # Load data
+    tensor_data_pkl_path = os.path.join(pickle_src_path, f'{data_split}_tensor_data.pickle')
+    processed_data_pkl_path = os.path.join(pickle_src_path, f'{data_split}_processed_data.pickle')
+    if os.path.isfile(tensor_data_pkl_path) and os.path.isfile(processed_data_pkl_path):
+        print("Loading stored processed data...")
+        with open(tensor_data_pkl_path, 'rb') as read_handle:
+            tensor_data = pickle.load(read_handle)
+        with open(processed_data_pkl_path, 'rb') as read_handle:
+            processed_data = pickle.load(read_handle)
+    else:
+        data_samples = utils.read_dataset(data_split, params["data_path"])
+        if not entity_dictionary_loaded:
+            with open(os.path.join(params["data_path"], 'dictionary.pickle'), 'rb') as read_handle:
+                entity_dictionary = pickle.load(read_handle)
+
+        # Check if dataset has multiple ground-truth labels
+        mult_labels = "labels" in data_samples[0].keys()
+        # Filter samples without gold entities
+        data_samples = list(
+            filter(lambda sample: (len(sample["labels"]) > 0) if mult_labels else (sample["label"] is not None),
+                   data_samples))
+        logger.info("Read %d data samples." % len(data_samples))
+
+        processed_data, entity_dictionary, tensor_data = data_process.process_mention_data(
+            data_samples,
+            entity_dictionary,
+            bi_tokenizer,
+            max_context_length,
+            max_cand_length,
+            context_key=params["context_key"],
+            multi_label_key="labels" if mult_labels else None,
+            silent=params["silent"],
+            logger=logger,
+            debug=params["debug"],
+            knn=knn,
+            dictionary_processed=entity_dictionary_loaded
+        )
+        print("Saving processed data...")
+        if not entity_dictionary_loaded:
+            with open(entity_dictionary_pkl_path, 'wb') as write_handle:
+                pickle.dump(entity_dictionary, write_handle,
+                            protocol=pickle.HIGHEST_PROTOCOL)
+        with open(tensor_data_pkl_path, 'wb') as write_handle:
+            pickle.dump(tensor_data, write_handle,
+                        protocol=pickle.HIGHEST_PROTOCOL)
+        with open(processed_data_pkl_path, 'wb') as write_handle:
+            pickle.dump(processed_data, write_handle,
+                        protocol=pickle.HIGHEST_PROTOCOL)
+
+    if return_dict_only:
+        return entity_dictionary
+    return entity_dictionary, tensor_data, processed_data
 
 
 def main(params):
