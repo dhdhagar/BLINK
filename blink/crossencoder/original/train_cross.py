@@ -6,38 +6,17 @@
 # LICENSE file in the root directory of this source tree.
 #
 import os
-import argparse
-import pickle
 import torch
-import json
-import sys
-import io
 import random
 import time
 import numpy as np
-
-from multiprocessing.pool import ThreadPool
-
 from tqdm import tqdm, trange
-from collections import OrderedDict
-
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, TensorDataset
-
-from pytorch_transformers.file_utils import PYTORCH_PRETRAINED_BERT_CACHE
 from pytorch_transformers.optimization import WarmupLinearSchedule
-from pytorch_transformers.tokenization_bert import BertTokenizer
-
-import blink.candidate_retrieval.utils
-from blink.crossencoder.crossencoder import CrossEncoderRanker
-import logging
-
+from blink.crossencoder.original.crossencoder import CrossEncoderRanker
 import blink.candidate_ranking.utils as utils
-import blink.biencoder.data_process as data
-from blink.biencoder.zeshel_utils import DOC_PATH, WORLDS, world_to_id
 from blink.common.optimizer import get_bert_optimizer
 from blink.common.params import BlinkParser
-
-
 from blink.crossencoder.eval_cluster_linking import load_data
 from IPython import embed
 
@@ -157,8 +136,6 @@ def main(params):
     params["train_batch_size"] = (
         params["train_batch_size"] // params["gradient_accumulation_steps"]
     )
-    train_batch_size = params["train_batch_size"]
-    eval_batch_size = params["eval_batch_size"]
     grad_acc_steps = params["gradient_accumulation_steps"]
 
     # Fix the random seeds
