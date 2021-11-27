@@ -182,19 +182,78 @@ def load_data(data_split,
     return entity_dictionary, tensor_data, processed_data
 
 
+def get_data_loader(data_split, tokenizer, context_length, candidate_length, max_seq_length, pickle_src_path,
+                    inject_ground_truth=False, max_n=None, shuffle=True, return_data=False):
+    # Load the top-64 indices for each mention query and the ground truth label if it exists in the candidate set
+    logger.info(f"Loading {data_split} data...")
+    fname = os.path.join(params["biencoder_indices_path"], f"candidates_{data_split}_top64.t7")  # train.t7
+    stored_data = torch.load(fname)
+    entity_dictionary, tensor_data, processed_data = load_data(data_split,
+                                                               tokenizer,
+                                                               context_length,
+                                                               candidate_length,
+                                                               1,
+                                                               pickle_src_path,
+                                                               params,
+                                                               logger)
+    logger.info("Loaded")
+    dict_vecs = list(map(lambda x: x['ids'], entity_dictionary))
+
+    candidate_input = []
+    keep_mask = [True] * len(stored_data['labels'])
+    for i in tqdm(range(len(stored_data['labels'])), desc="Processing"):
+        if stored_data['labels'][i] == -1:
+            # If ground truth not in candidates, replace the last candidate with the ground truth
+            if inject_ground_truth:
+                gold_idx = processed_data[i]["label_idxs"][0]
+                stored_data['labels'][i] = len(stored_data['candidates'][i]) - 1
+                stored_data['candidates'][i][-1] = gold_idx
+            else:
+                keep_mask[i] = False
+                continue
+        cands = list(map(lambda x: dict_vecs[x], stored_data['candidates'][i]))
+        candidate_input.append(cands)
+    candidate_input = np.array(candidate_input)
+    context_input = tensor_data[:][0][keep_mask]
+    label_input = torch.tensor(stored_data['labels'])[keep_mask]
+
+    n_no_label = len(stored_data['labels']) - np.sum(keep_mask)
+
+    if max_n is not None:
+        context_input = context_input[:max_n]
+        candidate_input = candidate_input[:max_n]
+        label_input = label_input[:max_n]
+
+    if params["debug"]:
+        max_n = 200
+        context_input = context_input[:max_n]
+        candidate_input = candidate_input[:max_n]
+        label_input = label_input[:max_n]
+
+    context_input = modify(context_input, candidate_input, max_seq_length)
+    tensor_data = TensorDataset(context_input, label_input)
+    sampler = RandomSampler(tensor_data) if shuffle else SequentialSampler(tensor_data)
+    dataloader = DataLoader(
+        tensor_data,
+        sampler=sampler,
+        batch_size=params["train_batch_size" if data_split == 'train' else "eval_batch_size"]
+    )
+    if return_data:
+        return dataloader, n_no_label, {"entity_dictionary": entity_dictionary, "mention_data": processed_data}
+    return dataloader, n_no_label
+
+
 def main(params):
     model_output_path = params["output_path"]
     if not os.path.exists(model_output_path):
         os.makedirs(model_output_path)
+    pickle_src_path = params["pickle_src_path"]
     logger = utils.get_logger(params["output_path"])
 
     # Init model
     reranker = CrossEncoderRanker(params)
     tokenizer = reranker.tokenizer
     model = reranker.model
-
-    # utils.save_model(model, tokenizer, model_output_path)
-
     device = reranker.device
     n_gpu = reranker.n_gpu
 
@@ -204,7 +263,6 @@ def main(params):
                 params["gradient_accumulation_steps"]
             )
         )
-
     # An effective batch size of `x`, when we are accumulating the gradient accross `y` batches will be achieved by having a batch size of `z = x / y`
     # args.gradient_accumulation_steps = args.gradient_accumulation_steps // n_gpu
     params["train_batch_size"] = (
@@ -224,103 +282,37 @@ def main(params):
     context_length = params["max_context_length"]
     candidate_length = params["max_context_length"]
 
-    pickle_src_path = params["pickle_src_path"]
+    if params["only_evaluate"]:
+        test_dataloader, n_test_skipped, data = get_data_loader('test', tokenizer, context_length, candidate_length,
+                                                                max_seq_length, pickle_src_path,
+                                                                inject_ground_truth=False,
+                                                                shuffle=False, return_data=True)
+        logger.info("Evaluating the model on the test set")
+        # TODO: Add error logging and results disk dump
+        results = evaluate(
+            reranker,
+            test_dataloader,
+            device=device,
+            logger=logger,
+            context_length=context_length,
+            silent=params["silent"],
+        )
+        unnormalized_accuracy = results["normalized_accuracy"] * \
+                                (len(data["mention_data"]) - n_test_skipped) / len(data["mention_data"])
+        logger.info(f"Eval accuracy (unnormalized): {unnormalized_accuracy:.5f}")
+        exit()
 
-    logger.info("Loading train data...")
-    fname = os.path.join(params["biencoder_indices_path"], "candidates_train_top64.t7") # train.t7
-    train_data = torch.load(fname) # Contains the top-64 indices for each mention query and the ground truth label if it exists in the candidate set
-    entity_dictionary, tensor_data, processed_data = load_data('train',
-                                                               tokenizer,
-                                                               context_length,
-                                                               candidate_length,
-                                                               1,
-                                                               pickle_src_path,
-                                                               params,
-                                                               logger)
-    logger.info("Loaded")
-    dict_vecs = list(map(lambda x: x['ids'], entity_dictionary))
+    train_dataloader, _, train_data = get_data_loader('train', tokenizer, context_length, candidate_length,
+                                                      max_seq_length, pickle_src_path, inject_ground_truth=True,
+                                                      return_data=True)
 
-    # If ground truth not in candidates, replace the last candidate with the ground truth
-    candidate_input = []
-    for i in tqdm(range(len(train_data['labels'])), desc="Processing"):
-        if train_data['labels'][i] == -1:
-            gold_idx = processed_data[i]["label_idxs"][0]
-            train_data['labels'][i] = len(train_data['candidates'][i]) - 1
-            train_data['candidates'][i][-1] = gold_idx
-        cands = list(map(lambda x: dict_vecs[x], train_data['candidates'][i]))
-        candidate_input.append(cands)
-    candidate_input = np.array(candidate_input)
-    context_input = tensor_data[:][0]
-    label_input = torch.tensor(train_data['labels'])
-
-    # train_data = torch.load(fname)
-    # context_input = train_data["context_vecs"]
-    # candidate_input = train_data["candidate_vecs"]
-    # label_input = train_data["labels"]
-
-    if params["debug"]:
-        max_n = 200
-        context_input = context_input[:max_n]
-        candidate_input = candidate_input[:max_n]
-        label_input = label_input[:max_n]
-
-    context_input = modify(context_input, candidate_input, max_seq_length)
-
-    train_tensor_data = TensorDataset(context_input, label_input)
-    train_sampler = RandomSampler(train_tensor_data)
-
-    train_dataloader = DataLoader(
-        train_tensor_data, 
-        sampler=train_sampler, 
-        batch_size=params["train_batch_size"]
-    )
-
-    max_n = 2048
-    if params["debug"]:
-        max_n = 200
-    logger.info("Loading valid data...")
-    fname = os.path.join(params["biencoder_indices_path"], "candidates_valid_top64.t7")
-    valid_data = torch.load(fname)
-
-    _, tensor_data, processed_data = load_data('valid',
-                                               tokenizer,
-                                               context_length,
-                                               candidate_length,
-                                               1,
-                                               pickle_src_path,
-                                               params,
-                                               logger)
-    logger.info("Loaded")
-    candidate_input = []
-    keep_mask = [True]*len(valid_data['labels'])
-    for i in tqdm(range(len(valid_data['labels'])), desc="Processing"):
-        if valid_data['labels'][i] == -1:
-            keep_mask[i] = False
-            continue
-        cands = list(map(lambda x: dict_vecs[x], valid_data['candidates'][i]))
-        candidate_input.append(cands)
-    candidate_input = np.array(candidate_input)
-    context_input = tensor_data[:][0][keep_mask]
-    label_input = torch.tensor(valid_data["labels"])[keep_mask]
-
-    context_input = context_input[:max_n]
-    candidate_input = candidate_input[:max_n]
-    label_input = label_input[:max_n]
-
-    context_input = modify(context_input, candidate_input, max_seq_length)
-
-    valid_tensor_data = TensorDataset(context_input, label_input)
-    valid_sampler = SequentialSampler(valid_tensor_data)
-
-    valid_dataloader = DataLoader(
-        valid_tensor_data, 
-        sampler=valid_sampler, 
-        batch_size=params["eval_batch_size"]
-    )
+    valid_dataloader, n_valid_skipped = get_data_loader('valid', tokenizer, context_length, candidate_length,
+                                                        max_seq_length, pickle_src_path, inject_ground_truth=False,
+                                                        max_n=2048)
 
     if not params["skip_initial_eval"]:
         logger.info("Evaluating dev set on untrained model...")
-        # evaluate before training
+        # Evaluate before training
         results = evaluate(
             reranker,
             valid_dataloader,
@@ -329,8 +321,6 @@ def main(params):
             context_length=context_length,
             silent=params["silent"],
         )
-
-    number_of_samples_per_dataset = {}
 
     time_start = time.time()
 
@@ -344,7 +334,7 @@ def main(params):
     )
 
     optimizer = get_optimizer(model, params)
-    scheduler = get_scheduler(params, optimizer, len(train_tensor_data), logger)
+    scheduler = get_scheduler(params, optimizer, len(train_data["mention_data"]), logger)
 
     model.train()
 
@@ -367,9 +357,6 @@ def main(params):
             batch = tuple(t.to(device) for t in batch)
             context_input, label_input = batch
             loss, _ = reranker(context_input, label_input, context_length)
-
-            # if n_gpu > 1:
-            #     loss = loss.mean() # mean() to average on multi-gpu.
 
             if grad_acc_steps > 1:
                 loss = loss / grad_acc_steps
@@ -421,9 +408,7 @@ def main(params):
             model_output_path, "epoch_{}".format(epoch_idx)
         )
         utils.save_model(model, tokenizer, epoch_output_folder_path)
-        # reranker.save(epoch_output_folder_path)
 
-        output_eval_file = os.path.join(epoch_output_folder_path, "eval_results.txt")
         results = evaluate(
             reranker,
             valid_dataloader,
@@ -449,21 +434,12 @@ def main(params):
 
     # save the best model in the parent_dir
     logger.info("Best performance in epoch: {}".format(best_epoch_idx))
-    params["path_to_model"] = os.path.join(
-        model_output_path, "epoch_{}".format(best_epoch_idx)
-    )
-    # utils.save_model(reranker.model, tokenizer, model_output_path)
-    # reranker = utils.get_biencoder(params)
-    # reranker.save(model_output_path)
 
 
 if __name__ == "__main__":
     parser = BlinkParser(add_model_args=True)
     parser.add_training_args()
-
-    # args = argparse.Namespace(**params)
     args = parser.parse_args()
     print(args)
-
     params = args.__dict__
     main(params)
