@@ -5,12 +5,14 @@
 # This source code is licensed under the license found in the
 # LICENSE file in the root directory of this source tree.
 #
+import collections
 import os
 import torch
 import random
 import time
 import numpy as np
 import pickle
+import json
 from tqdm import tqdm, trange
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, TensorDataset
 from pytorch_transformers.optimization import WarmupLinearSchedule
@@ -45,7 +47,8 @@ def modify(context_input, candidate_input, max_seq_length):
     return torch.LongTensor(new_input)
 
 
-def evaluate(reranker, eval_dataloader, device, logger, context_length, silent=True):
+def evaluate(reranker, eval_dataloader, device, logger, context_length, silent=True, unfiltered_length=None,
+             mention_data=None, compute_macro_avg=False):
     reranker.model.eval()
     if silent:
         iter_ = eval_dataloader
@@ -58,29 +61,58 @@ def evaluate(reranker, eval_dataloader, device, logger, context_length, silent=T
     nb_eval_examples = 0
     nb_eval_steps = 0
 
-    all_logits = []
+    # all_logits = []
+    processed_mention_data = mention_data['mention_data']
+    n_mentions_per_type = collections.defaultdict(int)
+    if compute_macro_avg:
+        for men in processed_mention_data:
+            n_mentions_per_type[men["type"]] += 1
+    n_evaluated_per_type = collections.defaultdict(int)
+    n_hits_per_type = collections.defaultdict(int)
 
     for step, batch in enumerate(iter_):
         batch = tuple(t.to(device) for t in batch)
-        context_input, label_input = batch
+        context_input, label_input, mention_idxs = batch
         with torch.no_grad():
             eval_loss, logits = reranker(context_input, label_input, context_length)
 
         logits = logits.detach().cpu().numpy()
         label_ids = label_input.cpu().numpy()
 
-        tmp_eval_accuracy = utils.accuracy(logits, label_ids)
+        tmp_eval_hits = utils.accuracy(logits, label_ids, return_bool_arr=True)
+        tmp_eval_accuracy = np.sum(tmp_eval_hits)
 
         eval_accuracy += tmp_eval_accuracy
-        all_logits.extend(logits)
+        # all_logits.extend(logits)
 
         nb_eval_examples += context_input.size(0)
         nb_eval_steps += 1
 
+        if compute_macro_avg:
+            for i, m_idx in enumerate(mention_idxs):
+                type = processed_mention_data[m_idx]['type']
+                n_evaluated_per_type[type] += 1
+                is_hit = tmp_eval_hits[i]
+                n_hits_per_type[type] += is_hit
+
+    results["filtered_length"] = nb_eval_examples
     normalized_eval_accuracy = eval_accuracy / nb_eval_examples
-    logger.info("Eval accuracy: %.5f" % normalized_eval_accuracy)
     results["normalized_accuracy"] = normalized_eval_accuracy
-    results["logits"] = all_logits
+    if unfiltered_length is not None:
+        results["unfiltered_length"] = unfiltered_length
+        results["unnormalized_accuracy"] = eval_accuracy / unfiltered_length
+    if compute_macro_avg:
+        norm_macro, unnorm_macro = 0, 0
+        for type in n_mentions_per_type:
+            norm_macro += n_hits_per_type[type]/n_evaluated_per_type[type]
+            unnorm_macro += n_hits_per_type[type]/n_mentions_per_type[type]
+        norm_macro /= len(n_evaluated_per_type)
+        unnorm_macro /= len(n_mentions_per_type)
+        results["normalized_macro_avg_acc"] = norm_macro
+        results["unnormalized_macro_avg_acc"] = unnorm_macro
+    logger.info(json.dumps(results))
+    # logger.info(json."Eval accuracy: %.5f" % normalized_eval_accuracy)
+    # results["logits"] = all_logits
     return results
 
 
@@ -230,8 +262,9 @@ def get_data_loader(data_split, tokenizer, context_length, candidate_length, max
         candidate_input = candidate_input[:max_n]
         label_input = label_input[:max_n]
 
+    mention_idxs = torch.tensor([i for i in range(len(context_input))])
     context_input = modify(context_input, candidate_input, max_seq_length)
-    tensor_data = TensorDataset(context_input, label_input)
+    tensor_data = TensorDataset(context_input, label_input, mention_idxs)
     sampler = RandomSampler(tensor_data) if shuffle else SequentialSampler(tensor_data)
     dataloader = DataLoader(
         tensor_data,
@@ -239,7 +272,9 @@ def get_data_loader(data_split, tokenizer, context_length, candidate_length, max
         batch_size=params["train_batch_size" if data_split == 'train' else "eval_batch_size"]
     )
     if return_data:
-        return dataloader, n_no_label, {"entity_dictionary": entity_dictionary, "mention_data": processed_data}
+        return dataloader, n_no_label, {"entity_dictionary": entity_dictionary,
+                                        "mention_data": processed_data,
+                                        "stored_candidates": stored_data}
     return dataloader, n_no_label
 
 
@@ -296,10 +331,14 @@ def main(params):
             logger=logger,
             context_length=context_length,
             silent=params["silent"],
+            unfiltered_length=len(data["mention_data"]),
+            mention_data=data,
+            compute_macro_avg=True
         )
-        unnormalized_accuracy = results["normalized_accuracy"] * \
-                                (len(data["mention_data"]) - n_test_skipped) / len(data["mention_data"])
-        logger.info(f"Eval accuracy (unnormalized): {unnormalized_accuracy:.5f}")
+        results_path = os.path.join(model_output_path, 'results.json')
+        with open(results_path, 'w') as f:
+            json.dump(results, f, indent=2)
+            print(f"\nAnalysis saved at: {results_path}")
         exit()
 
     train_dataloader, _, train_data = get_data_loader('train', tokenizer, context_length, candidate_length,
@@ -355,7 +394,7 @@ def main(params):
         part = 0
         for step, batch in enumerate(iter_):
             batch = tuple(t.to(device) for t in batch)
-            context_input, label_input = batch
+            context_input, label_input, _ = batch
             loss, _ = reranker(context_input, label_input, context_length)
 
             if grad_acc_steps > 1:
