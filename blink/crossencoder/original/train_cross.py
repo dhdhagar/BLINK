@@ -183,7 +183,7 @@ def load_data(data_split,
 
 
 def get_data_loader(data_split, tokenizer, context_length, candidate_length, max_seq_length, pickle_src_path,
-                    inject_ground_truth=False, max_n=None, shuffle=True, return_data=False):
+                    logger, inject_ground_truth=False, max_n=None, shuffle=True, return_data=False):
     # Load the top-64 indices for each mention query and the ground truth label if it exists in the candidate set
     logger.info(f"Loading {data_split} data...")
     fname = os.path.join(params["biencoder_indices_path"], f"candidates_{data_split}_top64.t7")  # train.t7
@@ -284,7 +284,7 @@ def main(params):
 
     if params["only_evaluate"]:
         test_dataloader, n_test_skipped, data = get_data_loader('test', tokenizer, context_length, candidate_length,
-                                                                max_seq_length, pickle_src_path,
+                                                                max_seq_length, pickle_src_path, logger,
                                                                 inject_ground_truth=False,
                                                                 shuffle=False, return_data=True)
         logger.info("Evaluating the model on the test set")
@@ -303,12 +303,12 @@ def main(params):
         exit()
 
     train_dataloader, _, train_data = get_data_loader('train', tokenizer, context_length, candidate_length,
-                                                      max_seq_length, pickle_src_path, inject_ground_truth=True,
+                                                      max_seq_length, pickle_src_path, logger, inject_ground_truth=True,
                                                       return_data=True)
 
     valid_dataloader, n_valid_skipped = get_data_loader('valid', tokenizer, context_length, candidate_length,
-                                                        max_seq_length, pickle_src_path, inject_ground_truth=False,
-                                                        max_n=2048)
+                                                        max_seq_length, pickle_src_path, logger,
+                                                        inject_ground_truth=False, max_n=2048)
 
     if not params["skip_initial_eval"]:
         logger.info("Evaluating dev set on untrained model...")
