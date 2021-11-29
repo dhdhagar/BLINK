@@ -62,11 +62,12 @@ def evaluate(reranker, eval_dataloader, device, logger, context_length, silent=T
     nb_eval_steps = 0
 
     # all_logits = []
-    processed_mention_data = mention_data['mention_data']
-    n_mentions_per_type = collections.defaultdict(int)
-    if compute_macro_avg:
-        for men in processed_mention_data:
-            n_mentions_per_type[men["type"]] += 1
+    if mention_data is not None:
+        processed_mention_data = mention_data['mention_data']
+        n_mentions_per_type = collections.defaultdict(int)
+        if compute_macro_avg:
+            for men in processed_mention_data:
+                n_mentions_per_type[men["type"]] += 1
     n_evaluated_per_type = collections.defaultdict(int)
     n_hits_per_type = collections.defaultdict(int)
 
