@@ -75,9 +75,8 @@ def main(params):
 
         # Check if dataset has multiple ground-truth labels
         mult_labels = "labels" in test_samples[0].keys()
-        if params["filter_unlabeled"]:
-            # Filter samples without gold entities
-            test_samples = list(filter(lambda sample: (len(sample["labels"]) > 0) if mult_labels else (sample["label"] is not None), test_samples))
+        # Filter samples without gold entities
+        test_samples = list(filter(lambda sample: (len(sample["labels"]) > 0) if mult_labels else (sample["label"] is not None), test_samples))
         logger.info("Read %d test samples." % len(test_samples))
 
         mention_data, test_dictionary, test_tensor_data = data_process.process_mention_data(
