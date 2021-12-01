@@ -128,7 +128,8 @@ def main(params):
     all_types = new_ent_types + mention_data # Array of dicts containing key "type" for selected ents and all mentions
 
     # Values of k to run the evaluation against
-    knn_vals = [25*2**i for i in range(int(math.log(knn/25, 2)) + 1)]
+    knn_vals = [25 * 2 ** i for i in range(int(math.log(knn / 25, 2)) + 1)] if params["exact_knn"] is None else [
+        params["exact_knn"]]
     # Store the maximum evaluation k
     max_knn = knn_vals[-1]
 
