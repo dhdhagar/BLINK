@@ -287,6 +287,7 @@ def main(params):
     output_file_name = os.path.join(
         output_path, f"results_{__import__('calendar').timegm(__import__('time').gmtime())}")
 
+    logger.info(f"Results: \n {results}")
     with open(f'{output_file_name}.json', 'w') as f:
         json.dump(results, f, indent=2)
         print(f"\nResults saved at: {output_file_name}.json")
