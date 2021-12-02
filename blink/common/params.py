@@ -481,6 +481,10 @@ class BlinkParser(argparse.ArgumentParser):
             type=str,
             help="Directory from which to store/load nearest biencoder indices for cross-encoder training.",
         )
+        parser.add_argument(
+            "--normalize_embeds", action="store_true",
+            help="Whether to normalize node embeddings before build the k-NN search index (for dendrogram purity)",
+        )
 
     def add_joint_train_args(self, args=None):
         """
