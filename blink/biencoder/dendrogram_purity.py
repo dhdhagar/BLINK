@@ -135,9 +135,10 @@ def main(params):
 
     n_mentions = len(test_tensor_data)
     n_entities = len(new_ent_vecs)
+    n_embeds = n_mentions + n_entities
     leaf_labels = np.array(ent_labels + men_labels, dtype=int)
     all_vecs = torch.cat((new_ent_vecs, test_men_vecs))
-    all_types = new_ent_types + mention_data # Array of dicts containing key "type" for selected ents and all mentions
+    all_types = new_ent_types + mention_data  # Array of dicts containing key "type" for selected ents and all mentions
 
     # Values of k to run the evaluation against
     knn_vals = [25 * 2 ** i for i in range(int(math.log(knn / 25, 2)) + 1)] if params["exact_knn"] is None else [
@@ -162,7 +163,7 @@ def main(params):
                 'rows': np.array([]),
                 'cols': np.array([]),
                 'data': np.array([]),
-                'shape': (n_entities+n_mentions, n_entities+n_mentions)
+                'shape': (n_embeds, n_embeds)
             }
 
         # Check and load stored embedding data
@@ -226,7 +227,7 @@ def main(params):
         if not use_types:
             faiss_dists, faiss_idxs = search_index.search(embeds, max_knn+1)
         else:
-            query_len = len(embeds)
+            query_len = n_embeds
             faiss_idxs = np.zeros((query_len, max_knn+1))
             faiss_dists = np.zeros((query_len, max_knn+1), dtype=float)
             for entity_type in search_indexes:
@@ -239,7 +240,7 @@ def main(params):
 
         logger.info('Building graphs')
         # Find the most similar nodes for each mention and node in the set (minus self)
-        for idx in trange(len(embeds)):
+        for idx in trange(n_embeds):
             # Compute adjacent node edge weight
             if idx != 0:
                 adj_idx = idx - 1
@@ -281,7 +282,7 @@ def main(params):
             exit()
 
     results = {
-        'n_leaves': len(embeds),
+        'n_leaves': n_embeds,
         'n_entities': n_entities,
         'n_mentions': n_mentions
     }
@@ -294,7 +295,7 @@ def main(params):
         purities = []
         fn_result = {}
         for k in joint_graphs:
-            graph = hg.UndirectedGraph(len(embeds))
+            graph = hg.UndirectedGraph(n_embeds)
             graph.add_edges(joint_graphs[k]['rows'], joint_graphs[k]['cols'])
             weights = -joint_graphs[k]['data']  # Since Higra expects weights as distances, not similarity
             tree = get_hac_tree(graph, weights, linkage=fn)
