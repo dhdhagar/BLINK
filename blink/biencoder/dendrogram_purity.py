@@ -289,7 +289,8 @@ def main(params):
 
     graph_processing_time = time.time()
     n_graphs_processed = 0.
-    linkage_fns = ["single", "complete", "average"]  # Different HAC linkage functions to run the analyses over
+    linkage_fns = ["single", "complete", "average"] if params["linkage"] is None \
+        else [params["linkage"]]  # Different HAC linkage functions to run the analyses over
 
     for fn in linkage_fns:
         logger.info(f"Linkage function: {fn}")
