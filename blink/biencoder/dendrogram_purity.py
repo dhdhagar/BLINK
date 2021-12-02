@@ -292,9 +292,11 @@ def main(params):
     linkage_fns = ["single", "complete", "average"]  # Different HAC linkage functions to run the analyses over
 
     for fn in linkage_fns:
+        logger.info(f"Linkage function: {fn}")
         purities = []
         fn_result = {}
         for k in joint_graphs:
+            logger.info(f"k={k}:")
             graph = hg.UndirectedGraph(n_embeds)
             graph.add_edges(joint_graphs[k]['rows'], joint_graphs[k]['cols'])
             weights = -joint_graphs[k]['data']  # Since Higra expects weights as distances, not similarity
