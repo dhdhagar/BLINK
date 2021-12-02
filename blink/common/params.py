@@ -485,6 +485,12 @@ class BlinkParser(argparse.ArgumentParser):
             "--normalize_embeds", action="store_true",
             help="Whether to normalize node embeddings before build the k-NN search index (for dendrogram purity)",
         )
+        parser.add_argument(
+            "--linkage",
+            default=None,
+            type=str,
+            help="Specific linkage function to use for dendrogram purity analysis.",
+        )
 
     def add_joint_train_args(self, args=None):
         """
