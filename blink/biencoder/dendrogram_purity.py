@@ -296,16 +296,17 @@ def main(params):
         purities = []
         fn_result = {}
         for k in joint_graphs:
-            logger.info(f"k={k}:")
             graph = hg.UndirectedGraph(n_embeds)
             graph.add_edges(joint_graphs[k]['rows'], joint_graphs[k]['cols'])
             weights = -joint_graphs[k]['data']  # Since Higra expects weights as distances, not similarity
             tree = get_hac_tree(graph, weights, linkage=fn)
             purity = hg.dendrogram_purity(tree, leaf_labels)
             fn_result[f"purity@{k}nn"] = purity
+            logger.info(f"purity@{k}nn = {purity}")
             purities.append(purity)
             n_graphs_processed += 1
         fn_result["average"] = round(np.mean(purities), 2)
+        logger.info(f"average = {fn_result['average']}")
         results[fn] = fn_result
 
     avg_graph_processing_time = (time.time() - graph_processing_time) / n_graphs_processed
