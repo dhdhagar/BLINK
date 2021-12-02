@@ -215,7 +215,7 @@ def main(params):
 
         # Build faiss search index
         if params["normalize_embeds"]:
-            embeds = normalize(embed, axis=0)
+            embeds = normalize(embeds, axis=0)
         logger.info("Building KNN index...")
         if use_types:
             search_indexes = data_process.get_index_from_embeds(embeds, corpus_idxs=idxs_by_type,
