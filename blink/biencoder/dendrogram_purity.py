@@ -15,12 +15,24 @@ import numpy as np
 from tqdm import trange
 import pickle
 import higra as hg
+from sklearn.preprocessing import normalize
+
 import blink.biencoder.data_process_mult as data_process
 import blink.candidate_ranking.utils as utils
 from blink.common.params import BlinkParser
 from blink.biencoder.biencoder import BiEncoderRanker
 
 from IPython import embed
+
+
+def get_hac_tree(graph, weights, linkage="single"):
+    fn_map = {
+        'single': hg.binary_partition_tree_single_linkage,
+        'complete': hg.binary_partition_tree_complete_linkage,
+        'average': hg.binary_partition_tree_average_linkage
+    }
+    tree, altitudes = fn_map[linkage](graph, weights)
+    return tree
 
 
 def main(params):
@@ -160,15 +172,14 @@ def main(params):
             embed_data = torch.load(embed_data_path)
         if use_types:
             if embed_data is not None:
-                logger.info('Loading stored embeddings and computing indexes')
+                logger.info('Loading stored embeddings')
                 embeds = embed_data['embeds']
                 if 'idxs_by_type' in embed_data:
                     idxs_by_type = embed_data['idxs_by_type']
                 else:
                     idxs_by_type = data_process.get_idxs_by_type(all_types)
-                search_indexes = data_process.get_index_from_embeds(embeds, idxs_by_type, force_exact_search=True)
             else:
-                logger.info("Embedding and building index")
+                logger.info("Embedding data")
                 dict_embeds = data_process.embed_and_index(reranker, all_vecs[:n_entities], encoder_type='candidate',
                                                            only_embed=True, n_gpu=n_gpu,
                                                            batch_size=params['embed_batch_size'])
@@ -177,14 +188,13 @@ def main(params):
                                                           batch_size=params['embed_batch_size'])
                 embeds = np.concatenate((dict_embeds, men_embeds), axis=0)
                 idxs_by_type = data_process.get_idxs_by_type(all_types)
-                search_indexes = data_process.get_index_from_embeds(embeds, corpus_idxs=idxs_by_type, force_exact_search=True)
+            search_indexes = data_process.get_index_from_embeds(embeds, corpus_idxs=idxs_by_type, force_exact_search=True)
         else:
             if embed_data is not None:
-                logger.info('Loading stored embeddings and computing indexes')
+                logger.info('Loading stored embeddings')
                 embeds = embed_data['embeds']
-                search_index = data_process.get_index_from_embeds(embeds, force_exact_search=True)
             else:
-                logger.info("Embedding and building index")
+                logger.info("Embedding data")
                 dict_embeds = data_process.embed_and_index(reranker, all_vecs[:n_entities], encoder_type='candidate',
                                                            only_embed=True, n_gpu=n_gpu,
                                                            batch_size=params['embed_batch_size'])
@@ -192,8 +202,7 @@ def main(params):
                                                           only_embed=True, n_gpu=n_gpu,
                                                           batch_size=params['embed_batch_size'])
                 embeds = np.concatenate((dict_embeds, men_embeds), axis=0)
-                search_index = data_process.get_index_from_embeds(embeds, force_exact_search=True)
-
+            search_index = data_process.get_index_from_embeds(embeds, force_exact_search=True)
         # Save computed embedding data if not loaded from disk
         if embed_data is None:
             embed_data = {}
@@ -202,6 +211,16 @@ def main(params):
                 embed_data['idxs_by_type'] = idxs_by_type
             # NOTE: Cannot pickle faiss index because it is a SwigPyObject
             torch.save(embed_data, embed_data_path, pickle_protocol=pickle.HIGHEST_PROTOCOL)
+
+        # Build faiss search index
+        if params["normalize_embeds"]:
+            embeds = normalize(embed, axis=0)
+        logger.info("Building KNN index...")
+        if use_types:
+            search_indexes = data_process.get_index_from_embeds(embeds, corpus_idxs=idxs_by_type,
+                                                                force_exact_search=True)
+        else:
+            search_index = data_process.get_index_from_embeds(embeds, force_exact_search=True)
 
         logger.info("Starting KNN search...")
         if not use_types:
@@ -269,15 +288,22 @@ def main(params):
 
     graph_processing_time = time.time()
     n_graphs_processed = 0.
+    linkage_fns = ["single", "complete", "average"]  # Different HAC linkage functions to run the analyses over
 
-    for k in joint_graphs:
-        graph = hg.UndirectedGraph(len(embeds))
-        graph.add_edges(joint_graphs[k]['rows'], joint_graphs[k]['cols'])
-        weights = -joint_graphs[k]['data']  # Higra expects weights as distances, not similarity
-        tree, altitudes = hg.binary_partition_tree_single_linkage(graph, weights)
-        purity = hg.dendrogram_purity(tree, leaf_labels)
-        results[f"purity@{k}nn"] = purity
-        n_graphs_processed += 1
+    for fn in linkage_fns:
+        purities = []
+        fn_result = {}
+        for k in joint_graphs:
+            graph = hg.UndirectedGraph(len(embeds))
+            graph.add_edges(joint_graphs[k]['rows'], joint_graphs[k]['cols'])
+            weights = -joint_graphs[k]['data']  # Since Higra expects weights as distances, not similarity
+            tree = get_hac_tree(graph, weights, linkage=fn)
+            purity = hg.dendrogram_purity(tree, leaf_labels)
+            fn_result[f"purity@{k}nn"] = purity
+            purities.append(purity)
+            n_graphs_processed += 1
+        fn_result["average"] = round(np.mean(purities), 2)
+        results[fn] = fn_result
 
     avg_graph_processing_time = (time.time() - graph_processing_time) / n_graphs_processed
     avg_per_graph_time = (knn_fetch_time + avg_graph_processing_time) / 60
