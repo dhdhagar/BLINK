@@ -306,7 +306,7 @@ def main(params):
             logger.info(f"purity@{k}nn = {purity}")
             purities.append(purity)
             n_graphs_processed += 1
-        fn_result["average"] = round(np.mean(purities), 2)
+        fn_result["average"] = round(np.mean(purities), 4)
         logger.info(f"average = {fn_result['average']}")
         results[fn] = fn_result
 
