@@ -555,6 +555,10 @@ def main(params):
                     #   positive edge
                     rows, cols, data, shape = [], [], [], (n_entities+n_mentions, n_entities+n_mentions)
                     seen = set()
+
+                    # Set whether the gold edge should be the nearest or the farthest neighbor
+                    sim_order = 1 if params["farthest_neighbor"] else -1
+
                     for cluster_ent in gold_idxs:
                         cluster_mens = train_gold_clusters[cluster_ent]
 
@@ -569,7 +573,8 @@ def main(params):
                         to_men_data = train_men_embeddings[cluster_mens] @ train_men_embeddings[cluster_mens].T
 
                         if gold_arbo_knn is not None:
-                            sorti = np.argsort(-to_men_data, axis=1)
+                            # Descending order of similarity if nearest-neighbor, else ascending order
+                            sorti = np.argsort(sim_order * to_men_data, axis=1)
                             sortv = np.take_along_axis(to_men_data, sorti, axis=1)
                             if params["rand_gold_arbo"]:
                                 randperm = np.random.permutation(sorti.shape[1])
@@ -613,11 +618,11 @@ def main(params):
                                         seen.add((from_node, to_node))
 
                     # Find MST with entity constraint
-                    csr = csr_matrix((data, (rows, cols)), shape=shape)
+                    csr = csr_matrix((-sim_order * data, (rows, cols)), shape=shape)
                     mst = minimum_spanning_tree(csr).tocoo()
                     rows, cols, data = cluster_linking_partition(np.concatenate((mst.row, mst.col)), 
-                                                                 np.concatenate((mst.col,mst.row)), 
-                                                                 np.concatenate((-mst.data, -mst.data)), 
+                                                                 np.concatenate((mst.col, mst.row)),
+                                                                 np.concatenate((sim_order * mst.data, sim_order * mst.data)),
                                                                  n_entities, 
                                                                  directed=True, 
                                                                  silent=True)

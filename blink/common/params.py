@@ -348,6 +348,10 @@ class BlinkParser(argparse.ArgumentParser):
             "--no_sigmoid_train", action="store_true",
             help="Whether to force-prevent the use of sigmoid on the logits computed in cross-encoder training.",
         )
+        parser.add_argument(
+            "--farthest_neighbor", action="store_true",
+            help="Whether to train with farthest gold neighbors or nearest.",
+        )
 
 
     def add_eval_args(self, args=None):
