@@ -627,7 +627,7 @@ def main(params):
                                                                      n_entities,
                                                                      directed=True,
                                                                      silent=True)
-                    assert np.array_equal(rows - n_entities, cluster_mens)
+                    assert np.array_equal(np.array(rows) - n_entities, cluster_mens)
                     
                     for i in range(len(rows)):
                         men_idx = rows[i] - n_entities
