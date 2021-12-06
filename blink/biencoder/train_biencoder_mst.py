@@ -617,15 +617,16 @@ def main(params):
                                             -1 * score)  # Negatives needed for SciPy's Minimum Spanning Tree computation
                                         seen.add((from_node, to_node))
 
-                    # Find MST with entity constraint
-                    csr = csr_matrix((-sim_order * data, (rows, cols)), shape=shape)
-                    mst = minimum_spanning_tree(csr).tocoo()
-                    rows, cols, data = cluster_linking_partition(np.concatenate((mst.row, mst.col)), 
-                                                                 np.concatenate((mst.col, mst.row)),
-                                                                 np.concatenate((sim_order * mst.data, sim_order * mst.data)),
-                                                                 n_entities, 
-                                                                 directed=True, 
-                                                                 silent=True)
+                    if len(rows) > 1:
+                        # Find MST with entity constraint
+                        csr = csr_matrix((-sim_order * np.array(data), (rows, cols)), shape=shape)
+                        mst = minimum_spanning_tree(csr).tocoo()
+                        rows, cols, data = cluster_linking_partition(np.concatenate((mst.row, mst.col)),
+                                                                     np.concatenate((mst.col, mst.row)),
+                                                                     np.concatenate((sim_order * mst.data, sim_order * mst.data)),
+                                                                     n_entities,
+                                                                     directed=True,
+                                                                     silent=True)
                     assert np.array_equal(rows - n_entities, cluster_mens)
                     
                     for i in range(len(rows)):
