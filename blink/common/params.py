@@ -352,6 +352,10 @@ class BlinkParser(argparse.ArgumentParser):
             "--farthest_neighbor", action="store_true",
             help="Whether to train with farthest gold neighbors or nearest.",
         )
+        parser.add_argument(
+            "--inject_train_ground_truth", type=bool, default=True,
+            help="Whether to inject the ground truth candidate, if missing, during BLINK-style cross-encoder training.",
+        )
 
 
     def add_eval_args(self, args=None):
