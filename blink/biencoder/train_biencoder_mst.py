@@ -525,7 +525,10 @@ def main(params):
             batch = tuple(t.to(device) for t in batch)
             batch_context_inputs, candidate_idxs, n_gold, mention_idxs = batch
             mention_embeddings = train_men_embeddings[mention_idxs.cpu()]
-            
+
+            if len(mention_embeddings.shape) == 1:
+                mention_embeddings = np.expand_dims(mention_embeddings, axis=0)
+
             # batch_context_inputs: Shape: batch x token_len
             # candidate_inputs = []
             # candidate_inputs = np.array([], dtype=np.long) # Shape: (batch*knn) x token_len
@@ -617,17 +620,18 @@ def main(params):
                                             -1 * score)  # Negatives needed for SciPy's Minimum Spanning Tree computation
                                         seen.add((from_node, to_node))
 
-                    if len(rows) > 1:
-                        # Find MST with entity constraint
-                        csr = csr_matrix((-sim_order * np.array(data), (rows, cols)), shape=shape)
-                        mst = minimum_spanning_tree(csr).tocoo()
-                        rows, cols, data = cluster_linking_partition(np.concatenate((mst.row, mst.col)),
-                                                                     np.concatenate((mst.col, mst.row)),
-                                                                     np.concatenate((sim_order * mst.data, sim_order * mst.data)),
-                                                                     n_entities,
-                                                                     directed=True,
-                                                                     silent=True)
-                    assert np.array_equal(np.array(rows) - n_entities, cluster_mens)
+                    # Find MST with entity constraint
+                    csr = csr_matrix((-sim_order * np.array(data), (rows, cols)), shape=shape)
+                    # Note: minimum_spanning_tree expects distances as edge weights
+                    mst = minimum_spanning_tree(csr).tocoo()
+                    # Note: cluster_linking_partition expects similarities as edge weights
+                    rows, cols, data = cluster_linking_partition(np.concatenate((mst.row, mst.col)),
+                                                                 np.concatenate((mst.col, mst.row)),
+                                                                 np.concatenate((sim_order * mst.data, sim_order * mst.data)),
+                                                                 n_entities,
+                                                                 directed=True,
+                                                                 silent=True)
+                    assert np.array_equal(rows - n_entities, cluster_mens)
                     
                     for i in range(len(rows)):
                         men_idx = rows[i] - n_entities
