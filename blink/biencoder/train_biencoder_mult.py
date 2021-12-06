@@ -492,6 +492,9 @@ def main(params):
             batch = tuple(t.to(device) for t in batch)
             context_inputs, candidate_idxs, n_gold, mention_idxs = batch
             mention_embeddings = train_men_embeddings[mention_idxs.cpu()]
+
+            if len(mention_embeddings.shape) == 1:
+                mention_embeddings = np.expand_dims(mention_embeddings, axis=0)
             
             # context_inputs: Shape: batch x token_len
             candidate_inputs = np.array([], dtype=np.int) # Shape: (batch*knn) x token_len
