@@ -343,7 +343,8 @@ def main(params):
         exit()
 
     train_dataloader, _, train_data = get_data_loader('train', tokenizer, context_length, candidate_length,
-                                                      max_seq_length, pickle_src_path, logger, inject_ground_truth=True,
+                                                      max_seq_length, pickle_src_path, logger,
+                                                      inject_ground_truth=params["inject_train_ground_truth"],
                                                       return_data=True)
 
     valid_dataloader, n_valid_skipped = get_data_loader('valid', tokenizer, context_length, candidate_length,
