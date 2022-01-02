@@ -55,7 +55,9 @@ def evaluate(reranker, eval_dataloader, device, logger, context_length, silent=T
     else:
         iter_ = tqdm(eval_dataloader, desc="Evaluation")
 
-    results = {}
+    results = {
+
+    }
 
     eval_accuracy = 0.0
     nb_eval_examples = 0
@@ -70,8 +72,10 @@ def evaluate(reranker, eval_dataloader, device, logger, context_length, silent=T
         dictionary = mention_data['entity_dictionary']
         stored_candidates = mention_data['stored_candidates']
         if store_failure_success:
-            results['failure'] = []
-            results['success'] = []
+            failsucc = {
+                'failure': [],
+                'success': []
+            }
     n_evaluated_per_type = collections.defaultdict(int)
     n_hits_per_type = collections.defaultdict(int)
 
@@ -112,7 +116,7 @@ def evaluate(reranker, eval_dataloader, device, logger, context_length, silent=T
                     'predicted_name': dict_pred['title'],
                     'predicted_cui': dict_pred['cui']
                 }
-                results['success' if tmp_eval_hits[i] else 'failure'].append(report_obj)
+                failsucc['success' if tmp_eval_hits[i] else 'failure'].append(report_obj)
 
     results["filtered_length"] = nb_eval_examples
     normalized_eval_accuracy = eval_accuracy / nb_eval_examples
@@ -129,7 +133,11 @@ def evaluate(reranker, eval_dataloader, device, logger, context_length, silent=T
         unnorm_macro /= len(n_mentions_per_type)
         results["normalized_macro_avg_acc"] = norm_macro
         results["unnormalized_macro_avg_acc"] = unnorm_macro
-    logger.info(json.dumps(results))
+    if store_failure_success:
+        results['failure'] = failsucc['failure']
+        results['success'] = failsucc['success']
+    if not store_failure_success:
+        logger.info(json.dumps(results))
     return results
 
 
