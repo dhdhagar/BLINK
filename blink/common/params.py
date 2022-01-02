@@ -356,6 +356,10 @@ class BlinkParser(argparse.ArgumentParser):
             "--inject_train_ground_truth", type=bool, default=True,
             help="Whether to inject the ground truth candidate, if missing, during BLINK-style cross-encoder training.",
         )
+        parser.add_argument(
+            "--inject_eval_ground_truth", type=bool, default=False,
+            help="Whether to inject the ground truth candidate, if missing, during BLINK-style cross-encoder eval (val or test).",
+        )
 
 
     def add_eval_args(self, args=None):

@@ -321,7 +321,7 @@ def main(params):
     if params["only_evaluate"]:
         test_dataloader, n_test_skipped, data = get_data_loader('test', tokenizer, context_length, candidate_length,
                                                                 max_seq_length, pickle_src_path, logger,
-                                                                inject_ground_truth=False,
+                                                                inject_ground_truth=params["inject_eval_ground_truth"],
                                                                 shuffle=False, return_data=True)
         logger.info("Evaluating the model on the test set")
         # TODO: Add error logging and results disk dump
@@ -349,7 +349,8 @@ def main(params):
 
     valid_dataloader, n_valid_skipped = get_data_loader('valid', tokenizer, context_length, candidate_length,
                                                         max_seq_length, pickle_src_path, logger,
-                                                        inject_ground_truth=False, max_n=2048)
+                                                        inject_ground_truth=params["inject_eval_ground_truth"],
+                                                        max_n=2048)
 
     if not params["skip_initial_eval"]:
         logger.info("Evaluating dev set on untrained model...")
