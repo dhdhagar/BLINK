@@ -88,7 +88,7 @@ def eval_precision_bm45_dataloader(dataloader, ks=[1, 5, 10], number_of_samples=
 def accuracy(out, labels, return_bool_arr=False):
     outputs = np.argmax(out, axis=1)
     if return_bool_arr:
-        return outputs == labels
+        return outputs == labels, outputs
     return np.sum(outputs == labels)
 
 

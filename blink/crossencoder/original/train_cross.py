@@ -48,7 +48,7 @@ def modify(context_input, candidate_input, max_seq_length):
 
 
 def evaluate(reranker, eval_dataloader, device, logger, context_length, silent=True, unfiltered_length=None,
-             mention_data=None, compute_macro_avg=False):
+             mention_data=None, compute_macro_avg=False, store_failure_success=False):
     reranker.model.eval()
     if silent:
         iter_ = eval_dataloader
@@ -61,13 +61,17 @@ def evaluate(reranker, eval_dataloader, device, logger, context_length, silent=T
     nb_eval_examples = 0
     nb_eval_steps = 0
 
-    # all_logits = []
     if mention_data is not None:
         processed_mention_data = mention_data['mention_data']
         n_mentions_per_type = collections.defaultdict(int)
         if compute_macro_avg:
             for men in processed_mention_data:
                 n_mentions_per_type[men["type"]] += 1
+        dictionary = mention_data['entity_dictionary']
+        stored_candidates = mention_data['stored_candidates']
+        if store_failure_success:
+            results['failure'] = []
+            results['success'] = []
     n_evaluated_per_type = collections.defaultdict(int)
     n_hits_per_type = collections.defaultdict(int)
 
@@ -80,11 +84,10 @@ def evaluate(reranker, eval_dataloader, device, logger, context_length, silent=T
         logits = logits.detach().cpu().numpy()
         label_ids = label_input.cpu().numpy()
 
-        tmp_eval_hits = utils.accuracy(logits, label_ids, return_bool_arr=True)
+        tmp_eval_hits, predicted = utils.accuracy(logits, label_ids, return_bool_arr=True)
         tmp_eval_accuracy = np.sum(tmp_eval_hits)
 
         eval_accuracy += tmp_eval_accuracy
-        # all_logits.extend(logits)
 
         nb_eval_examples += context_input.size(0)
         nb_eval_steps += 1
@@ -95,6 +98,21 @@ def evaluate(reranker, eval_dataloader, device, logger, context_length, silent=T
                 n_evaluated_per_type[type] += 1
                 is_hit = tmp_eval_hits[i]
                 n_hits_per_type[type] += is_hit
+
+        if store_failure_success:
+            for i, m_idx in enumerate(mention_idxs):
+                men_query = processed_mention_data[m_idx]
+                dict_pred = dictionary[stored_candidates['candidates'][m_idx][predicted[i]]]
+                report_obj = {
+                    'mention_id': men_query['mention_id'],
+                    'mention_name': men_query['mention_name'],
+                    'mention_gold_cui': '|'.join(men_query['label_cuis']),
+                    'mention_gold_cui_name': '|'.join(
+                        [dictionary[i]['title'] for i in men_query['label_idxs'][:men_query['n_labels']]]),
+                    'predicted_name': dict_pred['title'],
+                    'predicted_cui': dict_pred['cui']
+                }
+                results['success' if tmp_eval_hits[i] else 'failure'].append(report_obj)
 
     results["filtered_length"] = nb_eval_examples
     normalized_eval_accuracy = eval_accuracy / nb_eval_examples
@@ -112,8 +130,6 @@ def evaluate(reranker, eval_dataloader, device, logger, context_length, silent=T
         results["normalized_macro_avg_acc"] = norm_macro
         results["unnormalized_macro_avg_acc"] = unnorm_macro
     logger.info(json.dumps(results))
-    # logger.info(json."Eval accuracy: %.5f" % normalized_eval_accuracy)
-    # results["logits"] = all_logits
     return results
 
 
@@ -324,7 +340,6 @@ def main(params):
                                                                 inject_ground_truth=params["inject_eval_ground_truth"],
                                                                 shuffle=False, return_data=True)
         logger.info("Evaluating the model on the test set")
-        # TODO: Add error logging and results disk dump
         results = evaluate(
             reranker,
             test_dataloader,
@@ -334,7 +349,8 @@ def main(params):
             silent=params["silent"],
             unfiltered_length=len(data["mention_data"]),
             mention_data=data,
-            compute_macro_avg=True
+            compute_macro_avg=True,
+            store_failure_success=True
         )
         results_path = os.path.join(model_output_path, 'results.json')
         with open(results_path, 'w') as f:
