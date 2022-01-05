@@ -256,6 +256,7 @@ def get_data_loader(data_split, tokenizer, context_length, candidate_length, max
     logger.info("Loaded")
     dict_vecs = list(map(lambda x: x['ids'], entity_dictionary))
 
+    mention_idxs = torch.tensor([i for i in range(len(stored_data['labels']))])
     candidate_input = []
     keep_mask = [True] * len(stored_data['labels'])
     for i in tqdm(range(len(stored_data['labels'])), desc="Processing"):
@@ -273,6 +274,7 @@ def get_data_loader(data_split, tokenizer, context_length, candidate_length, max
     candidate_input = np.array(candidate_input)
     context_input = tensor_data[:][0][keep_mask]
     label_input = torch.tensor(stored_data['labels'])[keep_mask]
+    mention_idxs = mention_idxs[keep_mask]
 
     n_no_label = len(stored_data['labels']) - np.sum(keep_mask)
 
@@ -287,7 +289,6 @@ def get_data_loader(data_split, tokenizer, context_length, candidate_length, max
         candidate_input = candidate_input[:max_n]
         label_input = label_input[:max_n]
 
-    mention_idxs = torch.tensor([i for i in range(len(context_input))])
     context_input = modify(context_input, candidate_input, max_seq_length)
     tensor_data = TensorDataset(context_input, label_input, mention_idxs)
     sampler = RandomSampler(tensor_data) if shuffle else SequentialSampler(tensor_data)
