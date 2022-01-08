@@ -360,7 +360,12 @@ class BlinkParser(argparse.ArgumentParser):
             "--inject_eval_ground_truth", type=bool, default=False,
             help="Whether to inject the ground truth candidate, if missing, during BLINK-style cross-encoder eval (val or test).",
         )
-
+        parser.add_argument(
+            "--custom_cand_set",
+            default=None,
+            type=str,
+            help="Name of the file (without the .t7 extension) that contains the custom candidate set for the cross-encoder",
+        )
 
     def add_eval_args(self, args=None):
         """
