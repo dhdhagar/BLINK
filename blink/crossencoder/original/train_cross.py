@@ -240,10 +240,15 @@ def load_data(data_split,
 
 
 def get_data_loader(data_split, tokenizer, context_length, candidate_length, max_seq_length, pickle_src_path,
-                    logger, inject_ground_truth=False, max_n=None, shuffle=True, return_data=False):
+                    logger, inject_ground_truth=False, max_n=None, shuffle=True, return_data=False,
+                    custom_cand_set=None):
     # Load the top-64 indices for each mention query and the ground truth label if it exists in the candidate set
     logger.info(f"Loading {data_split} data...")
-    fname = os.path.join(params["biencoder_indices_path"], f"candidates_{data_split}_top64.t7")
+    cand_name = data_split
+    if custom_cand_set is not None:
+        logger.info(f"Loading custom candidate set: {custom_cand_set}...")
+        cand_name = custom_cand_set
+    fname = os.path.join(params["biencoder_indices_path"], f"candidates_{cand_name}_top64.t7")
     stored_data = torch.load(fname)
     entity_dictionary, tensor_data, processed_data = load_data(data_split,
                                                                tokenizer,
@@ -344,11 +349,11 @@ def main(params):
     candidate_length = params["max_context_length"]
 
     if params["only_evaluate"]:
-        split = "test" if params["custom_cand_set"] is None else params["custom_cand_set"]
-        test_dataloader, n_test_skipped, data = get_data_loader(split, tokenizer, context_length, candidate_length,
+        test_dataloader, n_test_skipped, data = get_data_loader("test", tokenizer, context_length, candidate_length,
                                                                 max_seq_length, pickle_src_path, logger,
                                                                 inject_ground_truth=params["inject_eval_ground_truth"],
-                                                                shuffle=False, return_data=True)
+                                                                shuffle=False, return_data=True,
+                                                                custom_cand_set=params["custom_cand_set"])
         logger.info("Evaluating the model on the test set")
         results = evaluate(
             reranker,
