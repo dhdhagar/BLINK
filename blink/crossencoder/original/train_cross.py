@@ -105,6 +105,7 @@ def evaluate(reranker, eval_dataloader, device, logger, context_length, silent=T
 
         if store_failure_success:
             for i, m_idx in enumerate(mention_idxs):
+                m_idx = m_idx.item()
                 men_query = processed_mention_data[m_idx]
                 dict_pred = dictionary[stored_candidates['candidates'][m_idx][predicted[i]]]
                 report_obj = {
