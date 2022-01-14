@@ -481,6 +481,12 @@ class BlinkParser(argparse.ArgumentParser):
             help="The directory from which to load the embeddings data (embed_data.t7).",
         )
         parser.add_argument(
+            "--graph_path",
+            default=None,
+            type=str,
+            help="The directory from which to load the joint graphs (graphs.pickle).",
+        )
+        parser.add_argument(
             "--within_doc", action="store_true",
             help="Whether to restrict mention-mention relationships to within the same context document.",
         )

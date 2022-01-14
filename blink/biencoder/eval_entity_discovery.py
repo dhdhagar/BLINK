@@ -134,6 +134,10 @@ def main(params):
     if embed_data_path is None or not os.path.exists(embed_data_path):
         embed_data_path = output_path
 
+    graph_path = params["graph_path"]
+    if graph_path is None or not os.path.exists(graph_path):
+        graph_path = output_path
+
     pickle_src_path = params["pickle_src_path"]
     if pickle_src_path is None or not os.path.exists(pickle_src_path):
         pickle_src_path = output_path
@@ -164,7 +168,7 @@ def main(params):
     embed_data_path = os.path.join(embed_data_path, 'embed_data.t7')
     embed_data = torch.load(embed_data_path)
     # Load stored joint graphs
-    graph_path = os.path.join(output_path, 'graphs.pickle')
+    graph_path = os.path.join(graph_path, 'graphs.pickle')
     print("Loading stored joint graphs...")
     with open(graph_path, 'rb') as read_handle:
         joint_graphs = pickle.load(read_handle)
