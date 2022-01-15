@@ -163,17 +163,22 @@ def main(params):
         tensor_data = pickle.load(read_handle)
     with open(mention_data_pkl_path, 'rb') as read_handle:
         mention_data = pickle.load(read_handle)
-    print("Loading embed data...")
-    # Check and load stored embedding data
-    embed_data_path = os.path.join(embed_data_path, 'embed_data.t7')
-    embed_data = torch.load(embed_data_path)
+
     # Load stored joint graphs
     graph_path = os.path.join(graph_path, 'graphs.pickle')
     print("Loading stored joint graphs...")
     with open(graph_path, 'rb') as read_handle:
         joint_graphs = pickle.load(read_handle)
 
+    if not params['drop_all_entities']:
+        # Since embed data is never used if the above condition is True
+        print("Loading embed data...")
+        # Check and load stored embedding data
+        embed_data_path = os.path.join(embed_data_path, 'embed_data.t7')
+        embed_data = torch.load(embed_data_path)
+
     n_entities = len(dictionary)
+    seen_mention_idxs = set()
     if params["seen_data_path"] is not None:  # Plug data leakage
         logger.info("Dropping mentions whose CUIs were seen during training")
         with open(params["seen_data_path"], 'rb') as read_handle:
@@ -183,9 +188,11 @@ def main(params):
             seen_cui_idxs.add(seen_men['label_idxs'][0])
         logger.info(f"CUIs seen at training: {len(seen_cui_idxs)}")
         filtered_mention_data = []
-        for men in mention_data:
+        for menidx, men in enumerate(mention_data):
             if men['label_idxs'][0] not in seen_cui_idxs:
                 filtered_mention_data.append(men)
+            else:
+                seen_mention_idxs.add(menidx)
         logger.info(f"Unfiltered mention size: {len(mention_data)}")
         mention_data = filtered_mention_data
         logger.info(f"Filtered mention size: {len(mention_data)}")
@@ -310,6 +317,9 @@ def main(params):
                 _f_row, _f_col, _f_data = [], [], []
                 for ki in range(len(joint_graphs[k]['rows'])):
                     if joint_graphs[k]['cols'][ki] < n_entities or joint_graphs[k]['rows'][ki] < n_entities:
+                        continue
+                    # Remove mentions whose gold entity was seen during training
+                    if (joint_graphs[k]['rows'][ki] - n_entities) in seen_mention_idxs:
                         continue
                     _f_row.append(joint_graphs[k]['rows'][ki])
                     _f_col.append(joint_graphs[k]['cols'][ki])
