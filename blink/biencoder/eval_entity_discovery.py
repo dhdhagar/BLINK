@@ -104,7 +104,7 @@ def analyzeClusters(clusters, gold_cluster_labels, n_entities, n_mentions, logge
             men_idx = cluster[i] - n_entities
             if men_idx < 0:
                 continue
-            if unseen_mention_idxs_map is not None:
+            if len(unseen_mention_idxs_map) != 0:
                 men_idx = unseen_mention_idxs_map[men_idx]
             predicted_cluster_labels[men_idx] = cluster_label
             n_predicted += 1
