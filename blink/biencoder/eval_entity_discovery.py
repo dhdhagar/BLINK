@@ -130,7 +130,7 @@ def analyzeClusters(clusters, gold_cluster_labels, n_entities, n_mentions, logge
     results = {}
     gold_cluster_labels = np.array(gold_cluster_labels)
     predicted_cluster_labels = np.array(predicted_cluster_labels)
-    for mode in [idx_subsets]:
+    for mode in idx_subsets:
         nmi = normalized_mutual_info_score(gold_cluster_labels[idx_subsets[mode]], predicted_cluster_labels[idx_subsets[mode]])
         rand_index = adjusted_rand_score(gold_cluster_labels[idx_subsets[mode]], predicted_cluster_labels[idx_subsets[mode]])
         result = (nmi + rand_index) / 2
