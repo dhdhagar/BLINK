@@ -93,7 +93,8 @@ Dropped edges during pre-processing:
     return partitioned_graph
 
 
-def analyzeClusters(clusters, gold_cluster_labels, n_entities, n_mentions, logger, unseen_mention_idxs_map=None):
+def analyzeClusters(clusters, gold_cluster_labels, n_entities, n_mentions, logger, unseen_mention_idxs_map=None,
+                    no_drop_seen=False):
     logger.info("Analyzing clusters...")
 
     predicted_cluster_labels = [-1*i for i in range(1, n_mentions+1)]
@@ -104,7 +105,7 @@ def analyzeClusters(clusters, gold_cluster_labels, n_entities, n_mentions, logge
             men_idx = cluster[i] - n_entities
             if men_idx < 0:
                 continue
-            if len(unseen_mention_idxs_map) != 0:
+            if len(unseen_mention_idxs_map) != 0 and not no_drop_seen:
                 men_idx = unseen_mention_idxs_map[men_idx]
             predicted_cluster_labels[men_idx] = cluster_label
             n_predicted += 1
@@ -117,12 +118,29 @@ def analyzeClusters(clusters, gold_cluster_labels, n_entities, n_mentions, logge
 
     logger.info(f"{n_predicted} mentions assigned to {len(clusters)} clusters; {debug_no_pred} singelton clusters")
 
-    nmi = normalized_mutual_info_score(gold_cluster_labels, predicted_cluster_labels)
-    rand_index = adjusted_rand_score(gold_cluster_labels, predicted_cluster_labels)
-    result = (nmi + rand_index) / 2
-    logger.info(f"NMI={nmi}, rand_index={rand_index} => average={result}")
+    if not no_drop_seen:
+        nmi = normalized_mutual_info_score(gold_cluster_labels, predicted_cluster_labels)
+        rand_index = adjusted_rand_score(gold_cluster_labels, predicted_cluster_labels)
+        result = (nmi + rand_index) / 2
+        logger.info(f"NMI={nmi}, rand_index={rand_index} => average={result}")
+        return {'rand_index': rand_index, 'nmi': nmi, 'average': result}
 
-    return {'rand_index': rand_index, 'nmi': nmi, 'average': result}
+    seen, unseen = [], []
+    for i in range(n_mentions):
+        if i in unseen_mention_idxs_map:
+            unseen.append(i)
+        else:
+            seen.append(i)
+    idx_subsets = {'seen': np.array(seen), 'unseen': np.array(unseen)}
+    results = {}
+    for mode in idx_subsets:
+        nmi = normalized_mutual_info_score(gold_cluster_labels[idx_subsets[mode]], predicted_cluster_labels[idx_subsets[mode]])
+        rand_index = adjusted_rand_score(gold_cluster_labels[idx_subsets[mode]], predicted_cluster_labels[idx_subsets[mode]])
+        result = (nmi + rand_index) / 2
+        logger.info(f"{mode.upper()}: NMI={nmi}, rand_index={rand_index} => average={result}")
+        results[mode] = {'rand_index': rand_index, 'nmi': nmi, 'average': result}
+    return results
+
 
 def main(params):
     time_start = time.time()
@@ -183,7 +201,6 @@ def main(params):
     seen_mention_idxs = set()
     unseen_mention_idxs_map = {}
     if params["seen_data_path"] is not None:  # Plug data leakage
-        logger.info("Dropping mentions whose CUIs were seen during training")
         with open(params["seen_data_path"], 'rb') as read_handle:
             seen_data = pickle.load(read_handle)
         seen_cui_idxs = set()
@@ -197,9 +214,11 @@ def main(params):
                 unseen_mention_idxs_map[menidx] = len(filtered_mention_data) - 1
             else:
                 seen_mention_idxs.add(menidx)
-        logger.info(f"Unfiltered mention size: {len(mention_data)}")
-        mention_data = filtered_mention_data
-        logger.info(f"Filtered mention size: {len(mention_data)}")
+        if not params['no_drop_seen']:
+            logger.info("Dropping mentions whose CUIs were seen during training")
+            logger.info(f"Unfiltered mention size: {len(mention_data)}")
+            mention_data = filtered_mention_data
+            logger.info(f"Filtered mention size: {len(mention_data)}")
     n_mentions = len(mention_data)
     n_labels = 1  # Zeshel and MedMentions have single gold entity mentions
 
@@ -323,9 +342,10 @@ def main(params):
                     if joint_graphs[k]['cols'][ki] < n_entities or joint_graphs[k]['rows'][ki] < n_entities:
                         continue
                     # Remove mentions whose gold entity was seen during training
-                    if (joint_graphs[k]['rows'][ki] - n_entities) in seen_mention_idxs or \
-                            (joint_graphs[k]['cols'][ki] - n_entities) in seen_mention_idxs:
-                        continue
+                    if len(seen_mention_idxs) > 0 and not params['no_drop_seen']:
+                        if (joint_graphs[k]['rows'][ki] - n_entities) in seen_mention_idxs or \
+                                (joint_graphs[k]['cols'][ki] - n_entities) in seen_mention_idxs:
+                            continue
                     _f_row.append(joint_graphs[k]['rows'][ki])
                     _f_col.append(joint_graphs[k]['cols'][ki])
                     _f_data.append(joint_graphs[k]['data'][ki])
@@ -342,13 +362,15 @@ def main(params):
                     partitioned_graph, clusters = partition_graph(
                         joint_graphs[k], n_entities, mode == 'directed', return_clusters=True, exclude=set_dropped_ent_idxs, threshold=thresh, without_entities=params['drop_all_entities'])
                     # Analyze cluster against gold clusters
-                    result = analyzeClusters(clusters, mention_gold_cui_idxs, n_entities, n_mentions, logger, unseen_mention_idxs_map)
+                    result = analyzeClusters(clusters, mention_gold_cui_idxs, n_entities, n_mentions, logger, unseen_mention_idxs_map, no_drop_seen=params['no_drop_seen'])
                     results[f'({mode}, {k}, {thresh})'] = result
-                    if thresh != 0 and result['average'] > best_result:
-                        best_result = result['average']
-                        best_config = (mode, k, thresh)
-        results[f'best_{mode}_config'] = best_config
-        results[f'best_{mode}_result'] = best_result
+                    if not params['no_drop_seen']:
+                        if thresh != 0 and result['average'] > best_result:
+                            best_result = result['average']
+                            best_config = (mode, k, thresh)
+        if not params['no_drop_seen']:
+            results[f'best_{mode}_config'] = best_config
+            results[f'best_{mode}_result'] = best_result
     
     # Store results
     output_file_name = os.path.join(
