@@ -477,13 +477,17 @@ class BlinkParser(argparse.ArgumentParser):
             "--graph_path",
             default=None,
             type=str,
-            help="The directory from which to load the joint graphs (graphs.pickle).",
+            help="Discovery: The directory from which to load the joint graphs (graphs.pickle).",
         )
         parser.add_argument(
             "--seen_data_path",
             default=None,
             type=str,
-            help="Path to the file with training mentions to drop valid/test mentions with cuis seen at training",
+            help="Discovery: Path to the file with training mentions to drop valid/test mentions with cuis seen at training",
+        )
+        parser.add_argument(
+            "--no_drop_seen", action="store_true",
+            help="Discovery: Flag to prevent dropping mentions whose CUIs were seen at training in order to report both subsets individually",
         )
         # /Entity Discovery
         parser.add_argument(
