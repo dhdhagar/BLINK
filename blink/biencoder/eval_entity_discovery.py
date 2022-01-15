@@ -174,8 +174,23 @@ def main(params):
         joint_graphs = pickle.load(read_handle)
 
     n_entities = len(dictionary)
+    if params["seen_data_path"] is not None:  # Plug data leakage
+        logger.info("Dropping mentions whose CUIs were seen during training")
+        with open(params["seen_data_path"], 'rb') as read_handle:
+            seen_data = pickle.load(read_handle)
+        seen_cui_idxs = set()
+        for seen_men in seen_data:
+            seen_cui_idxs.add(seen_men['label_idxs'][0])
+        logger.info(f"CUIs seen at training: {len(seen_cui_idxs)}")
+        filtered_mention_data = []
+        for men in mention_data:
+            if men['label_idxs'][0] not in seen_cui_idxs:
+                filtered_mention_data.append(men)
+        logger.info(f"Unfiltered mention size: {len(mention_data)}")
+        mention_data = filtered_mention_data
+        logger.info(f"Filtered mention size: {len(mention_data)}")
     n_mentions = len(mention_data)
-    n_labels = 1 # Zeshel and MedMentions have single gold entity mentions
+    n_labels = 1  # Zeshel and MedMentions have single gold entity mentions
 
     mention_gold_cui_idxs = list(map(lambda x: x['label_idxs'][n_labels - 1], mention_data))
     ents_in_data = np.unique(mention_gold_cui_idxs)
