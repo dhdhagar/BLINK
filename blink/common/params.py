@@ -473,18 +473,24 @@ class BlinkParser(argparse.ArgumentParser):
             "--drop_all_entities", action="store_true",
             help="Discovery: Whether to run experiments without any entities (usually for baseline)",
         )
+        parser.add_argument(
+            "--graph_path",
+            default=None,
+            type=str,
+            help="The directory from which to load the joint graphs (graphs.pickle).",
+        )
+        parser.add_argument(
+            "--seen_data_path",
+            default=None,
+            type=str,
+            help="Path to the file with training mentions to drop valid/test mentions with cuis seen at training",
+        )
         # /Entity Discovery
         parser.add_argument(
             "--embed_data_path",
             default=None,
             type=str,
             help="The directory from which to load the embeddings data (embed_data.t7).",
-        )
-        parser.add_argument(
-            "--graph_path",
-            default=None,
-            type=str,
-            help="The directory from which to load the joint graphs (graphs.pickle).",
         )
         parser.add_argument(
             "--within_doc", action="store_true",
