@@ -93,7 +93,7 @@ Dropped edges during pre-processing:
     return partitioned_graph
 
 
-def analyzeClusters(clusters, gold_cluster_labels, n_entities, n_mentions, logger):
+def analyzeClusters(clusters, gold_cluster_labels, n_entities, n_mentions, logger, unseen_mention_idxs_map=None):
     logger.info("Analyzing clusters...")
 
     predicted_cluster_labels = [-1*i for i in range(1, n_mentions+1)]
@@ -104,6 +104,8 @@ def analyzeClusters(clusters, gold_cluster_labels, n_entities, n_mentions, logge
             men_idx = cluster[i] - n_entities
             if men_idx < 0:
                 continue
+            if unseen_mention_idxs_map is not None:
+                men_idx = unseen_mention_idxs_map[men_idx]
             predicted_cluster_labels[men_idx] = cluster_label
             n_predicted += 1
     
@@ -179,6 +181,7 @@ def main(params):
 
     n_entities = len(dictionary)
     seen_mention_idxs = set()
+    unseen_mention_idxs_map = {}
     if params["seen_data_path"] is not None:  # Plug data leakage
         logger.info("Dropping mentions whose CUIs were seen during training")
         with open(params["seen_data_path"], 'rb') as read_handle:
@@ -191,6 +194,7 @@ def main(params):
         for menidx, men in enumerate(mention_data):
             if men['label_idxs'][0] not in seen_cui_idxs:
                 filtered_mention_data.append(men)
+                unseen_mention_idxs_map[menidx] = len(filtered_mention_data) - 1
             else:
                 seen_mention_idxs.add(menidx)
         logger.info(f"Unfiltered mention size: {len(mention_data)}")
@@ -319,7 +323,8 @@ def main(params):
                     if joint_graphs[k]['cols'][ki] < n_entities or joint_graphs[k]['rows'][ki] < n_entities:
                         continue
                     # Remove mentions whose gold entity was seen during training
-                    if (joint_graphs[k]['rows'][ki] - n_entities) in seen_mention_idxs:
+                    if (joint_graphs[k]['rows'][ki] - n_entities) in seen_mention_idxs or \
+                            (joint_graphs[k]['cols'][ki] - n_entities) in seen_mention_idxs:
                         continue
                     _f_row.append(joint_graphs[k]['rows'][ki])
                     _f_col.append(joint_graphs[k]['cols'][ki])
@@ -337,7 +342,7 @@ def main(params):
                     partitioned_graph, clusters = partition_graph(
                         joint_graphs[k], n_entities, mode == 'directed', return_clusters=True, exclude=set_dropped_ent_idxs, threshold=thresh, without_entities=params['drop_all_entities'])
                     # Analyze cluster against gold clusters
-                    result = analyzeClusters(clusters, mention_gold_cui_idxs, n_entities, n_mentions+len(seen_mention_idxs), logger)
+                    result = analyzeClusters(clusters, mention_gold_cui_idxs, n_entities, n_mentions, logger, unseen_mention_idxs_map)
                     results[f'({mode}, {k}, {thresh})'] = result
                     if thresh != 0 and result['average'] > best_result:
                         best_result = result['average']
