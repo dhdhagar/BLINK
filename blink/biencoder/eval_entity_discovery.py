@@ -125,17 +125,12 @@ def analyzeClusters(clusters, gold_cluster_labels, n_entities, n_mentions, logge
         logger.info(f"NMI={nmi}, rand_index={rand_index} => average={result}")
         return {'rand_index': rand_index, 'nmi': nmi, 'average': result}
 
-    seen, unseen = [], []
-    for i in range(n_mentions):
-        if i in unseen_mention_idxs_map:
-            unseen.append(i)
-        else:
-            seen.append(i)
-    idx_subsets = {'seen': np.array(seen), 'unseen': np.array(unseen)}
+    unseen = np.array(list(unseen_mention_idxs_map.keys()))
+    idx_subsets = {'overall': np.array(list(range(n_mentions))), 'unseen': unseen}
     results = {}
     gold_cluster_labels = np.array(gold_cluster_labels)
     predicted_cluster_labels = np.array(predicted_cluster_labels)
-    for mode in idx_subsets:
+    for mode in [idx_subsets]:
         nmi = normalized_mutual_info_score(gold_cluster_labels[idx_subsets[mode]], predicted_cluster_labels[idx_subsets[mode]])
         rand_index = adjusted_rand_score(gold_cluster_labels[idx_subsets[mode]], predicted_cluster_labels[idx_subsets[mode]])
         result = (nmi + rand_index) / 2
