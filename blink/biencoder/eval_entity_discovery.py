@@ -337,7 +337,7 @@ def main(params):
                     partitioned_graph, clusters = partition_graph(
                         joint_graphs[k], n_entities, mode == 'directed', return_clusters=True, exclude=set_dropped_ent_idxs, threshold=thresh, without_entities=params['drop_all_entities'])
                     # Analyze cluster against gold clusters
-                    result = analyzeClusters(clusters, mention_gold_cui_idxs, n_entities, n_mentions, logger)
+                    result = analyzeClusters(clusters, mention_gold_cui_idxs, n_entities, n_mentions+len(seen_mention_idxs), logger)
                     results[f'({mode}, {k}, {thresh})'] = result
                     if thresh != 0 and result['average'] > best_result:
                         best_result = result['average']
