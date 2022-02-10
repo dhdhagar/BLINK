@@ -58,6 +58,16 @@ English language, and had both a Title and an Abstract.
 was constructed using multiple sub-domains in Wikia from FANDOM with automatically 
 extracted labeled mentions using hyper-links.
 
+### Download instructions
+- **ZeShEL**:
+  - Download the data files from the original ZeShEL repo (https://github.com/lajanugen/zeshel)
+  - This should give you a directory called "zeshel" with 2 sub-directories - "documents" and "mentions"
+  - Our pre-processing code (`arboEL/blink/preprocess/zeshel_*`) assumes you place this "zeshel" folder in `$PROJECT_ROOT/data`
+- **MedMentions**:
+  - Download the data files from https://drive.google.com/file/d/1qywgi4VkumB3dAtRx6aHWUX65XrCPGXL/view?usp=sharing
+  - This should give you a directory called "medmentions" with 2 sub-directories - "documents" and "mentions"
+  - Our pre-processing code (`arboEL/blink/preprocess/medmentions_*`) assumes you place this "medmentions" folder in `$PROJECT_ROOT/data`
+
 ## Pre-processing
 
 - For MedMentions
