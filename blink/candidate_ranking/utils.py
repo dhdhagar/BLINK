@@ -21,6 +21,7 @@ from tqdm import tqdm
 from blink.candidate_ranking.bert_reranking import BertReranker
 from blink.biencoder.biencoder import BiEncoderRanker
 
+OPTIM_SCHED_FNAME = "optim_sched.pth"
 
 def read_dataset(dataset_name, preprocessed_json_data_parent_folder, debug=False):
     file_name = "{}.jsonl".format(dataset_name)
@@ -84,8 +85,10 @@ def eval_precision_bm45_dataloader(dataloader, ks=[1, 5, 10], number_of_samples=
     return p
 
 
-def accuracy(out, labels):
+def accuracy(out, labels, return_bool_arr=False):
     outputs = np.argmax(out, axis=1)
+    if return_bool_arr:
+        return outputs == labels, outputs
     return np.sum(outputs == labels)
 
 
@@ -97,17 +100,24 @@ def remove_module_from_state_dict(state_dict):
     return new_state_dict
 
 
-def save_model(model, tokenizer, output_dir):
+def save_model(model, tokenizer, output_dir, scheduler=None, optimizer=None):
     """Saves the model and the tokenizer used in the output directory."""
+    """Additionally, store the optimizer and scheduler to resume training."""
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-
     model_to_save = model.module if hasattr(model, "module") else model
     output_model_file = os.path.join(output_dir, WEIGHTS_NAME)
     output_config_file = os.path.join(output_dir, CONFIG_NAME)
     torch.save(model_to_save.state_dict(), output_model_file)
     model_to_save.config.to_json_file(output_config_file)
     tokenizer.save_vocabulary(output_dir)
+    if scheduler is not None and optimizer is not None:
+        optimizer_scheduler_file = os.path.join(output_dir, OPTIM_SCHED_FNAME)
+        optim_sched = {
+            'optimizer': optimizer,
+            'scheduler': scheduler
+        }
+        torch.save(optim_sched, optimizer_scheduler_file)
 
 
 def get_logger(output_dir=None, file_name='log'):

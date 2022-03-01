@@ -127,6 +127,11 @@ class BlinkParser(argparse.ArgumentParser):
             help="The full path to the model to load.",
         )
         parser.add_argument(
+            "--path_to_biencoder_model",
+            type=str,
+            help="The full path to the bi-encoder model to load for cross-encoder candidate generation.",
+        )
+        parser.add_argument(
             "--bert_model",
             default="bert-base-uncased",
             type=str,
@@ -143,7 +148,7 @@ class BlinkParser(argparse.ArgumentParser):
         )
         parser.add_argument("--context_key", default="context", type=str)
         parser.add_argument(
-            "--out_dim", type=int, default=1, help="Output dimention of bi-encoders.",
+            "--out_dim", type=int, default=1, help="Output dimension of bi-encoders.",
         )
         parser.add_argument(
             "--add_linear",
@@ -232,8 +237,8 @@ class BlinkParser(argparse.ArgumentParser):
             help="Interval for evaluation during training",
         )
         parser.add_argument(
-            "--save_interval", type=int, default=1, 
-            help="Interval for model saving"
+            "--save_interval", type=float, default=-1,
+            help="Interval for during-training model saving (value between 0 and 1). -1 prevents model saving during training."
         )
         parser.add_argument(
             "--warmup_proportion",
@@ -246,7 +251,7 @@ class BlinkParser(argparse.ArgumentParser):
             "--gradient_accumulation_steps",
             type=int,
             default=1,
-            help="Number of updates steps to accumualte before performing a backward/update pass.",
+            help="Number of updates steps to accumulate before performing a backward/update pass.",
         )
         parser.add_argument(
             "--type_optimization",
@@ -255,13 +260,17 @@ class BlinkParser(argparse.ArgumentParser):
             help="Which type of layers to optimize in BERT",
         )
         parser.add_argument(
-            "--shuffle", type=bool, default=False, 
+            "--shuffle", type=bool, default=True, 
             help="Whether to shuffle train data",
         )
         # Cluster-linking arguments
         parser.add_argument(
             "--knn", type=int, default=10, 
-            help="Number of kNN (positive+negative) candidates to fetch per mention query during training",
+            help="Number of k-NN (positive+negative) candidates to fetch per mention query during training",
+        )
+        parser.add_argument(
+            "--knn_negs", type=int, default=8,
+            help="Number of k-NN negatives in each row of the training batch",
         )
         parser.add_argument(
             "--filter_unlabeled", action="store_true",
@@ -282,6 +291,80 @@ class BlinkParser(argparse.ArgumentParser):
         parser.add_argument(
             "--use_types_for_eval", action="store_true",
             help="Whether to use type information during evaluation when --use_types is False",
+        )
+        parser.add_argument(
+            "--drop_entities", action="store_true",
+            help="Drop entities at random before training for entity discovery experiments",
+        )
+        parser.add_argument(
+            "--bi_knn", type=int, default=64,
+            help="Number of biencoder nearest-neighbors to fetch for cross-encoder scoring",
+        )
+        parser.add_argument(
+            "--gold_arbo_knn", type=int,
+            help="Number of k-NN edges to use per gold cluster to compute aroborescences for gold links",
+        )
+        parser.add_argument(
+            "--rand_gold_arbo", action="store_true",
+            help="Whether to randomize selection of mention NNs for gold arbo approximation",
+        )
+        parser.add_argument(
+            "--scoring_batch_size", type=int, default=64,
+            help="Batch size to use for cross-encoder scoring",
+        )
+        parser.add_argument(
+            "--skip_initial_eval", action="store_true",
+            help="Skip model evaluation before the start of training",
+        )
+        parser.add_argument(
+            "--checkpoint_epoch_data", action="store_true",
+            help="Whether to store per epoch data as a checkpoint file. For quicker debugging.",
+        )
+        parser.add_argument(
+            "--biencoder_indices_path",
+            default=None,
+            type=str,
+            help="Directory from which to store/load nearest biencoder indices for cross-encoder training.",
+        )
+        parser.add_argument(
+            "--within_doc", action="store_true",
+            help="Whether to restrict mention-mention relationships to within the same context document.",
+        )
+        parser.add_argument(
+            "--within_doc_skip_strategy", action="store_true",
+            help="For training mentions without valid mention negatives, whether to skip them in training or train with only entity negatives.",
+        )
+        parser.add_argument(
+            "--skip_epoch_eval", action="store_true",
+            help="Whether to skip epoch evaluations.",
+        )
+        parser.add_argument(
+            "--drop_set",
+            default=None,
+            type=str,
+            help="Mention data set used to drop random entites from in order to train model for Entity Discovery",
+        )
+        parser.add_argument(
+            "--no_sigmoid_train", action="store_true",
+            help="Whether to force-prevent the use of sigmoid on the logits computed in cross-encoder training.",
+        )
+        parser.add_argument(
+            "--farthest_neighbor", action="store_true",
+            help="Whether to train with farthest gold neighbors or nearest.",
+        )
+        parser.add_argument(
+            "--inject_train_ground_truth", type=bool, default=True,
+            help="Whether to inject the ground truth candidate, if missing, during BLINK-style cross-encoder training.",
+        )
+        parser.add_argument(
+            "--inject_eval_ground_truth", type=bool, default=False,
+            help="Whether to inject the ground truth candidate, if missing, during BLINK-style cross-encoder eval (val or test).",
+        )
+        parser.add_argument(
+            "--custom_cand_set",
+            default=None,
+            type=str,
+            help="Name of the file (without the .t7 extension) that contains the custom candidate set for the cross-encoder",
         )
 
     def add_eval_args(self, args=None):
@@ -326,6 +409,10 @@ class BlinkParser(argparse.ArgumentParser):
         )
         # Cluster-linking arguments
         parser.add_argument(
+            "--only_embed_and_build", action="store_true",
+            help="Whether to exit the script after embedding data and building graphs",
+        )
+        parser.add_argument(
             "--graph_mode", type=str, default=None,
             help="Whether to run evaluation in 'directed' or 'undirected' mode. Run both if not specified",
         )
@@ -357,19 +444,52 @@ class BlinkParser(argparse.ArgumentParser):
             "--force_exact_search", action="store_true",
             help="Whether to run FAISS nearest-neighbour retrieval in exact-search (IndexFlatIP) mode",
         )
+        parser.add_argument(
+            "--transductive", action="store_true",
+            help="Whether to run evaluation in a transductive-style, i.e. using training data in addition to the test data",
+        )
         # Entity discovery
         parser.add_argument(
+            "--discovery", action="store_true",
+            help="Whether to run cross-encoder eval for entity discovery experiments",
+        )
+        parser.add_argument(
+            "--ent_drop_prop", type=float, default=0.1,
+            help="Discovery: Proportion of unique entities to drop from the dataset in order to evaluate their discovery.",
+        )
+        parser.add_argument(
             "--n_thresholds", type=int, default=10,
-            help="Number of thresholds to try out for entity discovery",
+            help="Discovery: Number of thresholds to try out for entity discovery",
         )
         parser.add_argument(
             "--exact_threshold", type=float, default=None,
-            help="Exact value of the similarity threshold to run the experiment against",
+            help="Discovery: Exact value of the similarity threshold to run the experiment against",
         )
         parser.add_argument(
             "--exact_knn", type=int, default=None,
-            help="Exact value of the knn graph to run the experient against",
+            help="Discovery: Exact value of the knn graph to run the experiment against",
         )
+        parser.add_argument(
+            "--drop_all_entities", action="store_true",
+            help="Discovery: Whether to run experiments without any entities (usually for baseline)",
+        )
+        parser.add_argument(
+            "--graph_path",
+            default=None,
+            type=str,
+            help="Discovery: The directory from which to load the joint graphs (graphs.pickle).",
+        )
+        parser.add_argument(
+            "--seen_data_path",
+            default=None,
+            type=str,
+            help="Discovery: Path to the file with training mentions to drop valid/test mentions with cuis seen at training",
+        )
+        parser.add_argument(
+            "--no_drop_seen", action="store_true",
+            help="Discovery: Flag to prevent dropping mentions whose CUIs were seen at training in order to report both subsets individually",
+        )
+        # /Entity Discovery
         parser.add_argument(
             "--embed_data_path",
             default=None,
@@ -377,8 +497,32 @@ class BlinkParser(argparse.ArgumentParser):
             help="The directory from which to load the embeddings data (embed_data.t7).",
         )
         parser.add_argument(
-            "--drop_all_entities", action="store_true",
-            help="Whether to run the discovery without any entities (usually for baseline)",
+            "--within_doc", action="store_true",
+            help="Whether to restrict mention-mention relationships to within the same context document.",
+        )
+        parser.add_argument(
+            "--bi_knn", type=int, default=64,
+            help="Number of biencoder nearest-neighbors to fetch for cross-encoder scoring",
+        )
+        parser.add_argument(
+            "--scoring_batch_size", type=int, default=64,
+            help="Batch size to use for cross-encoder scoring",
+        )
+        parser.add_argument(
+            "--biencoder_indices_path",
+            default=None,
+            type=str,
+            help="Directory from which to store/load nearest biencoder indices for cross-encoder training.",
+        )
+        parser.add_argument(
+            "--normalize_embeds", action="store_true",
+            help="Whether to normalize node embeddings before build the k-NN search index (for dendrogram purity)",
+        )
+        parser.add_argument(
+            "--linkage",
+            default=None,
+            type=str,
+            help="Specific linkage function to use for dendrogram purity analysis.",
         )
 
     def add_joint_train_args(self, args=None):

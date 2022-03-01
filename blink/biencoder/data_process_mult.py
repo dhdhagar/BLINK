@@ -156,12 +156,20 @@ def process_mention_data(
         labels, record_labels, record_cuis = [sample], [], []
         if multi_label_key is not None:
             labels = sample[multi_label_key]
+        
+        not_found_in_dict = False
         for l in labels:
             label = l[label_key]
             label_idx = l[label_id_key]
+            if label_idx not in dict_cui_to_idx:
+                not_found_in_dict = True
+                break
             record_labels.append(dict_cui_to_idx[label_idx])
             record_cuis.append(label_idx)
         
+        if not_found_in_dict:
+            continue
+
         record = {
             "mention_id": sample.get("mention_id", idx),
             "mention_name": sample["mention"],
