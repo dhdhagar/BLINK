@@ -1,6 +1,7 @@
 import pickle
 import os
 import json
+from collections import defaultdict
 from IPython import embed
 
 BLINK_ROOT = f'{os.path.abspath(os.path.dirname(__file__))}/../..'
@@ -39,48 +40,80 @@ result_paths = {
 
 seen_unseen_results = {}
 
+print("Loading train data...")
 with open(train_data_path, 'rb') as read_handle:
     train_data = pickle.load(read_handle)
 
 seen_cui_ids = set()
+cui_to_men = defaultdict(set)
 for mention in train_data:
-    seen_cui_ids.add(mention['label_cuis'][0])
+    cui = mention['label_cuis'][0]
+    seen_cui_ids.add(cui)
+    cui_to_men[cui].add(mention['mention_id'])
 
+n_men_per_cui = {k: len(v) for k, v in cui_to_men.items()}
+
+print("Loading test data...")
 with open(test_data_path, 'rb') as read_handle:
     test_data = pickle.load(read_handle)
+
 seen_mention_idxs, unseen_mention_idxs = set(), set()
+seen_single_mention_idxs, seen_non_single_mention_idxs = set(), set()  # singletons, non-singletons
+
+print("Analyzing...")
 for mention in test_data:
-    if mention['label_cuis'][0] in seen_cui_ids:
-        seen_mention_idxs.add(mention['mention_id'])
+    cui = mention['label_cuis'][0]
+    men_id = mention['mention_id']
+    if cui in seen_cui_ids:
+        seen_mention_idxs.add(men_id)
+        if n_men_per_cui[cui] == 1:
+            seen_single_mention_idxs.add(men_id)
+        else:
+            seen_non_single_mention_idxs.add(men_id)
     else:
-        unseen_mention_idxs.add(mention['mention_id'])
+        unseen_mention_idxs.add(men_id)
 
 len_seen = len(seen_mention_idxs)
+len_single_seen = len(seen_single_mention_idxs)
+len_non_single_seen = len(seen_non_single_mention_idxs)
 len_unseen = len(unseen_mention_idxs)
 len_total = len_seen + len_unseen
 
-n_seen_in_test = 0.
-total_seen_computed = False
+seen_unseen_results['n_seen'] = len_seen
+seen_unseen_results['n_single_seen'] = len_single_seen
+seen_unseen_results['n_non_single_seen'] = len_non_single_seen
+seen_unseen_results['n_unseen'] = len_unseen
+seen_unseen_results['n_total'] = len_total
+
 for mode in result_paths:
     n_success_seen, n_success_unseen = 0., 0.
+    n_success_single_seen, n_success_non_single_seen = 0., 0.
     print(f"Mode: {mode}")
-    n_correct_seen = 0.
     with open(result_paths[mode]) as f:
         results = json.load(f)
     for m in results['success']:
-        if m['mention_id'] in seen_mention_idxs:
+        men_id = m['mention_id']
+        if men_id in seen_mention_idxs:
             n_success_seen += 1.
+            if men_id in seen_single_mention_idxs:
+                n_success_single_seen += 1.
+            else:
+                n_success_non_single_seen += 1.
         else:
             n_success_unseen += 1.
     n_success_total = n_success_seen + n_success_unseen
 
     seen_acc = (n_success_seen / len_seen) * 100
+    seen_single_acc = (n_success_single_seen / len_single_seen) * 100
+    seen_non_single_acc = (n_success_non_single_seen / len_non_single_seen) * 100
     unseen_acc = (n_success_unseen / len_unseen) * 100
     overall_acc = (n_success_total / len_total) * 100
 
     seen_unseen_results[mode] = {
         'overall': overall_acc,
         'seen': seen_acc,
+        'seen_singleton': seen_single_acc,
+        'seen_non_singleton': seen_non_single_acc,
         'unseen': unseen_acc
     }
 
