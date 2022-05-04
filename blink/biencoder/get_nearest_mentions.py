@@ -557,7 +557,7 @@ def main(params):
             recall_knn = sum(recall_hit) / min(cui_sums[gold_cui] - 1, knn)
             men_recall_knn.append(recall_knn)
     logger.info('Done')
-    assert len(men_recall_knn) == len(nn_men_idxs)
+    # assert len(men_recall_knn) == len(nn_men_idxs)
 
     # Pickle the graphs
     print(f"Saving top-{knn} candidates")
