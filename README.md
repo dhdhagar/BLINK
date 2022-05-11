@@ -1,26 +1,28 @@
+![BLINK logo](./img/arboEL.png)
+
 # ArboEL
 
-_(Entity Linking & Discovery via Arborescence-based Supervised Clustering)_
+**(NAACL 2022!)** Entity Linking via Explicit Mention-Mention Coreference Modeling: https://openreview.net/forum?id=f_1MD91kBza  
+Entity Linking & Discovery via Arborescence-based Supervised Clustering: https://arxiv.org/abs/2109.01242
 
 ---
 
-Thanks to [BLINK](https://github.com/facebookresearch/BLINK) for the 
-infrastructure of this project!
-
 ## Overview
-
-**Our paper:** https://arxiv.org/abs/2109.01242
 
 ArboEL is an entity linking and discovery system, which 
 uses a directed MST (arborescence) supervised clustering objective to train
-a bi-encoder BERT model coupled with a transductive graph partitioning inference routine
+BERT-based dual-encoders coupled with multiple inference routines, including a 
+transductive graph partitioning procedure
 that makes predictions by jointly considering links between mentions as well as 
-between mentions and entities.
+between mentions and entities. The repository additionally contains 
+cross-encoder training and inference procedures that utilize the improved
+representations provided by the arborescence-based dual-encoders.
 
 
 ## Citing
 
-If you use ArboEL, please cite the following paper:
+If you use ArboEL in your work, please cite the following paper:  
+**_(NOTE: NAACL citation details TBA)_**
 
 ```bibtex
 @misc{agarwal2021entity,
@@ -50,7 +52,7 @@ If you use ArboEL, please cite the following paper:
 
 ## Datasets
 
-- [MedMentions](https://github.com/chanzuckerberg/MedMentions) (full): The MedMentions corpus
+- [MedMentions](https://github.com/chanzuckerberg/MedMentions) (Full): The MedMentions corpus
 consists of 4,392 papers (Titles and Abstracts) randomly selected from among papers 
 released on PubMed in 2016, that were in the biomedical field, published in the 
 English language, and had both a Title and an Abstract.
@@ -84,45 +86,74 @@ extracted labeled mentions using hyper-links.
   # Pre-process the query mentions
   python blink/preprocess/zeshel_preprocess.py
   ```
-  
-## Bi-encoder Training
 
-### MST
-Example command for MedMentions
+---
+
+The following are example commands for **MedMentions**. For brevity, and to reduce repetition, commands for ZeShEL are omitted but can be constructed by simply swapping path values in these commands.
+## Dual-encoder Training
+
+### Arborescence
 ```bash
 python blink/biencoder/train_biencoder_mst.py --bert_model=models/biobert-base-cased-v1.1 --data_path=data/medmentions/processed --output_path=models/trained/medmentions_mst/pos_neg_loss/no_type --pickle_src_path=models/trained/medmentions --num_train_epochs=5 --train_batch_size=128 --gradient_accumulation_steps=4 --eval_interval=10000 --pos_neg_loss --force_exact_search --embed_batch_size=3500 --data_parallel
 ```
 
 ### k-NN negatives
-Example command for MedMentions
 ```bash
 python blink/biencoder/train_biencoder_mult.py --bert_model=models/biobert-base-cased-v1.1 --data_path=data/medmentions/processed --output_path=models/trained/medmentions/pos_neg_loss/no_type --pickle_src_path=models/trained/medmentions --num_train_epochs=5 --train_batch_size=128 --gradient_accumulation_steps=4 --eval_interval=10000 --pos_neg_loss --force_exact_search --embed_batch_size=3500 --data_parallel
 ```
 
 ### In-batch negatives
-Example command for MedMentions
 ```bash
 python blink/biencoder/train_biencoder.py --bert_model=models/biobert-base-cased-v1.1 --num_train_epochs=5 --data_path=data/medmentions/processed --output_path=models/trained/medmentions_blink --data_parallel --train_batch_size=128 --eval_batch_size=128 --eval_interval=10000
 ```
 
-## Bi-encoder Inference
+## Dual-encoder Inference
 
 ### Linking
-Example command for MedMentions
 ```bash
 python blink/biencoder/eval_cluster_linking.py --bert_model=models/biobert-base-cased-v1.1 --data_path=data/medmentions/processed --output_path=models/trained/medmentions_mst/eval/pos_neg_loss/no_type/wo_type --pickle_src_path=models/trained/medmentions/eval --path_to_model=models/trained/medmentions_mst/pos_neg_loss/no_type/epoch_best_5th/pytorch_model.bin --recall_k=64 --embed_batch_size=3500 --force_exact_search --data_parallel
 ```
 
 ### Discovery
-Example command for MedMentions
 ```bash
 python blink/biencoder/eval_entity_discovery.py --bert_model=models/biobert-base-cased-v1.1 --data_path=data/medmentions/processed --output_path=models/trained/medmentions_mst/eval/pos_neg_loss/directed --pickle_src_path=models/trained/medmentions/eval --embed_data_path=models/trained/medmentions_mst/eval/pos_neg_loss --use_types --force_exact_search --graph_mode=directed --exact_threshold=127.87733985396665 --exact_knn=8 --data_parallel
 ```
 
+## Cross-encoder Training
+We specify cross-encoder commands for the Arborescence dual-encoder only for brevity. Commands for other variants can be constructed by simply swapping path values in these commands.
+
+### (using Arborescence dual-encoder)
+```bash
+python blink/crossencoder/original/train_cross.py --data_path=data/medmentions/processed --pickle_src_path=models/trained/medmentions --output_path=models/trained/medmentions/crossencoder/arbo --bert_model=models/biobert-base-cased-v1.1 --learning_rate=2e-05 --num_train_epochs=5 --train_batch_size=2 --eval_batch_size=2 --biencoder_indices_path=models/trained/medmentions/candidates/arbo --add_linear --skip_initial_eval --eval_interval=-1 --data_parallel
+```
+
+## Cross-encoder Inference
+
+### (using Arborescence dual-encoder)
+
+#### Regular
+```bash
+python blink/crossencoder/original/train_cross.py --data_path=data/medmentions/processed --pickle_src_path=models/trained/medmentions --output_path=models/trained/medmentions/crossencoder/eval/arbo --eval_batch_size=2 --biencoder_indices_path=models/trained/medmentions/candidates/arbo --add_linear --only_evaluate --data_parallel --bert_model=models/biobert-base-cased-v1.1 --path_to_model=models/trained/medmentions/crossencoder/arbo/pytorch_model.bin
+```
+
+#### Oracle (Self Set)
+```bash
+python blink/crossencoder/original/train_cross.py --data_path=data/medmentions/processed --pickle_src_path=models/trained/medmentions --output_path=models/trained/medmentions/crossencoder/eval/arbo/oracle --eval_batch_size=2 --biencoder_indices_path=models/trained/medmentions/candidates/arbo --add_linear --only_evaluate --data_parallel --bert_model=models/biobert-base-cased-v1.1 --inject_eval_ground_truth=True --path_to_model=models/trained/medmentions/crossencoder/arbo/pytorch_model.bin
+```
+
+#### Oracle (Union Set)
+```bash
+python blink/crossencoder/original/train_cross.py --data_path=data/medmentions/processed --pickle_src_path=models/trained/medmentions --output_path=models/trained/medmentions/crossencoder/eval/arbo/oracle_union --eval_batch_size=2 --biencoder_indices_path=models/trained/medmentions/candidates --custom_cand_set=union --add_linear --only_evaluate --data_parallel --bert_model=models/biobert-base-cased-v1.1 --inject_eval_ground_truth=True --path_to_model=models/trained/medmentions/crossencoder/arbo/pytorch_model.bin
+```
+
 ## Questions / Feedback
 
-If you have any questions, comments, or feedback on our work, you can reach out at
-[dagarwal@cs.umass.edu](mailto:dagarwal@cs.umass.edu), or open a GitHub issue.
+If you have any questions, comments, or feedback on our work, please reach out at
+[dagarwal@cs.umass.edu](mailto:dagarwal@cs.umass.edu)! (or open a GitHub issue)
 
 ## Licence
 ArboEL is MIT licensed. See the [LICENSE](LICENSE) file for details.
+
+## Acknowledgements
+We thank [BLINK](https://github.com/facebookresearch/BLINK) for the 
+base infrastructure of this project.
