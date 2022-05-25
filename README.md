@@ -22,16 +22,17 @@ representations provided by the arborescence-based dual-encoders.
 ## Citing
 
 If you use ArboEL in your work, please cite the following paper:  
-**_(NOTE: NAACL citation details TBA)_**
-
 ```bibtex
-@misc{agarwal2021entity,
-      title={Entity Linking and Discovery via Arborescence-based Supervised Clustering}, 
-      author={Dhruv Agarwal and Rico Angell and Nicholas Monath and Andrew McCallum},
-      year={2021},
-      eprint={2109.01242},
-      archivePrefix={arXiv},
-      primaryClass={cs.CL}
+@inproceedings{agarwal-etal-2022-entity,
+    title = "Entity Linking via Explicit Mention-Mention Coreference Modeling",
+    author = "Agarwal, Dhruv and
+      Angell, Rico  and
+      Monath, Nicholas  and
+      McCallum, Andrew",
+    booktitle = "Proceedings of the 2022 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies",
+    month = jul,
+    year = "2022",
+    publisher = "Association for Computational Linguistics",
 }
 ```
 
