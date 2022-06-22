@@ -17,6 +17,13 @@ DST_DIR="$ROOD_DIR/models"
 mkdir -p "$DST_DIR"
 cd "$DST_DIR"
 
+# BioBERT Model
+## You may need to install lfs with `sudo apt-get install git-lfs`
+git install lfs
+git clone https://huggingface.co/dmis-lab/biobert-base-cased-v1.1
+
+
+# General domain models
 if [[ ! -f biencoder_wiki_large.bin ]]; then
     wget http://dl.fbaipublicfiles.com/BLINK/biencoder_wiki_large.bin
 fi
