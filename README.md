@@ -2,7 +2,7 @@
 
 # ArboEL
 
-**(NAACL 2022!)** Entity Linking via Explicit Mention-Mention Coreference Modeling: https://openreview.net/forum?id=f_1MD91kBza  
+**(NAACL 2022!)** Entity Linking via Explicit Mention-Mention Coreference Modeling: https://aclanthology.org/2022.naacl-main.343/  
 Entity Linking & Discovery via Arborescence-based Supervised Clustering: https://arxiv.org/abs/2109.01242
 
 ---
@@ -25,14 +25,18 @@ If you use ArboEL in your work, please cite the following paper:
 ```bibtex
 @inproceedings{agarwal-etal-2022-entity,
     title = "Entity Linking via Explicit Mention-Mention Coreference Modeling",
-    author = "Agarwal, Dhruv and
+    author = "Agarwal, Dhruv  and
       Angell, Rico  and
       Monath, Nicholas  and
       McCallum, Andrew",
     booktitle = "Proceedings of the 2022 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies",
     month = jul,
     year = "2022",
+    address = "Seattle, United States",
     publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2022.naacl-main.343",
+    pages = "4644--4658",
+    abstract = "Learning representations of entity mentions is a core component of modern entity linking systems for both candidate generation and making linking predictions. In this paper, we present and empirically analyze a novel training approach for learning mention and entity representations that is based on building minimum spanning arborescences (i.e., directed spanning trees) over mentions and entities across documents to explicitly model mention coreference relationships. We demonstrate the efficacy of our approach by showing significant improvements in both candidate generation recall and linking accuracy on the Zero-Shot Entity Linking dataset and MedMentions, the largest publicly available biomedical dataset. In addition, we show that our improvements in candidate generation yield higher quality re-ranking models downstream, setting a new SOTA result in linking accuracy on MedMentions. Finally, we demonstrate that our improved mention representations are also effective for the discovery of new entities via cross-document coreference.",
 }
 ```
 
@@ -125,6 +129,10 @@ We specify cross-encoder commands for the Arborescence dual-encoder only for bre
 
 ### (using Arborescence dual-encoder)
 ```bash
+# Generate dual-encoder candidates
+python blink/crossencoder/eval_cluster_linking.py --data_path=data/medmentions/processed --output_path=models/trained/medmentions/candidates/arbo --pickle_src_path=models/trained/medmentions --path_to_biencoder_model=models/trained/medmentions_mst/pos_neg_loss/no_type/epoch_best_5th/pytorch_model.bin --bert_model=models/biobert-base-cased-v1.1 --data_parallel --scoring_batch_size=64 --save_topk_result
+
+# Run cross-encoder training
 python blink/crossencoder/original/train_cross.py --data_path=data/medmentions/processed --pickle_src_path=models/trained/medmentions --output_path=models/trained/medmentions/crossencoder/arbo --bert_model=models/biobert-base-cased-v1.1 --learning_rate=2e-05 --num_train_epochs=5 --train_batch_size=2 --eval_batch_size=2 --biencoder_indices_path=models/trained/medmentions/candidates/arbo --add_linear --skip_initial_eval --eval_interval=-1 --data_parallel
 ```
 
