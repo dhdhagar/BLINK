@@ -129,6 +129,10 @@ We specify cross-encoder commands for the Arborescence dual-encoder only for bre
 
 ### (using Arborescence dual-encoder)
 ```bash
+# Generate dual-encoder candidates
+python blink/crossencoder/eval_cluster_linking.py --data_path=data/medmentions/processed --output_path=models/trained/medmentions/candidates/arbo --pickle_src_path=models/trained/medmentions --path_to_biencoder_model=models/trained/medmentions_mst/pos_neg_loss/no_type/epoch_best_5th/pytorch_model.bin --bert_model=models/biobert-base-cased-v1.1 --data_parallel --scoring_batch_size=64 --save_topk_result
+
+# Run cross-encoder training
 python blink/crossencoder/original/train_cross.py --data_path=data/medmentions/processed --pickle_src_path=models/trained/medmentions --output_path=models/trained/medmentions/crossencoder/arbo --bert_model=models/biobert-base-cased-v1.1 --learning_rate=2e-05 --num_train_epochs=5 --train_batch_size=2 --eval_batch_size=2 --biencoder_indices_path=models/trained/medmentions/candidates/arbo --add_linear --skip_initial_eval --eval_interval=-1 --data_parallel
 ```
 
