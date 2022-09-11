@@ -570,7 +570,7 @@ def main(params):
         n_thresholds = params['n_thresholds']  # Default is 10
         k_means = KMeans(n_clusters=n_thresholds, random_state=17)
         thresholds = np.sort(
-            np.concatenate(([0], k_means.fit(np.array(men_scores).flatten.reshape(-1, 1)).cluster_centers_.flatten())))
+            np.concatenate(([0], k_means.fit(np.array(men_scores).flatten().reshape(-1, 1)).cluster_centers_.flatten())))
         n_gold_edges = sum([cui_sums[cui] * (cui_sums[cui] - 1) / 2 for cui in cui_sums])
         best_thresh, best_f1 = -float('inf'), -float('inf')
         for thresh in thresholds:
