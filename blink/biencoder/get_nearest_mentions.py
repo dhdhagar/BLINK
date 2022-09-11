@@ -570,7 +570,7 @@ def main(params):
         n_thresholds = params['n_thresholds']  # Default is 10
         k_means = KMeans(n_clusters=n_thresholds, random_state=17)
         thresholds = np.sort(
-            np.concatenate(([0], k_means.fit(men_cand_scores.reshape(-1, 1)).cluster_centers_.flatten())))
+            np.concatenate(([0], k_means.fit(np.array(men_scores).flatten.reshape(-1, 1)).cluster_centers_.flatten())))
         n_gold_edges = sum([cui_sums[cui] * (cui_sums[cui] - 1) / 2 for cui in cui_sums])
         best_thresh, best_f1 = -float('inf'), -float('inf')
         for thresh in thresholds:
@@ -581,7 +581,7 @@ def main(params):
             for idx in range(len(men_cands)):
                 gold_cui = mention_data[idx]['label_cuis'][0]
                 for nn_i, nn_score in enumerate(men_scores[idx]):
-                    if nn_score > thresh:
+                    if nn_score > thresh + 2:
                         # Valid edge
                         nn_idx = men_cands[idx][nn_i]
                         if (idx, nn_idx) in seen or (nn_idx, idx) in seen:
