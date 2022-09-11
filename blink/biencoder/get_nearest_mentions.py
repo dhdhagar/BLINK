@@ -567,7 +567,7 @@ def main(params):
     # Compute optimal score threshold to use for pairwise similarity score metric
     if params["compute_pairwise_acc_threshold"]:
         logger.info("Computing optimal threshold for pairwise accuracy (F1)")
-        threshold_range = [2**i for i in range(int(math.log(params['n_thresholds'], 2)) + 1)]
+        threshold_range = [5, 10, 15, 20, 25, 30]  # [2**i for i in range(int(math.log(params['n_thresholds'], 2)) + 1)]
         knn_range = [2**i for i in range(int(math.log(knn, 2)) + 1)]
         for n_thresholds in threshold_range:
             # n_thresholds = params['n_thresholds']  # Default is 10
