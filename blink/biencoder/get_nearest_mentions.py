@@ -605,6 +605,8 @@ def main(params):
                         continue
                     precision = n_correct_edges / n_retained_edges
                     recall = n_correct_edges / n_gold_edges
+                    if precision == 0 and recall == 0:
+                        continue
                     f1 = (2 * precision * recall) / (precision + recall)
                     logger.info(f"n_correct={n_correct_edges}, n_retained={n_retained_edges}, n_gold={n_gold_edges}")
                     logger.info(f"f1={f1}, recall={recall}")
@@ -652,6 +654,9 @@ def main(params):
         # Calculate F1 of positive edges
         precision = n_correct_edges / len(retained_edges)
         recall = n_correct_edges / n_gold_edges
+        if precision == 0 and recall == 0:
+            logger.info("Error: Precision and recall both zero! Exiting...")
+            exit(0)
         f1 = (2 * precision * recall) / (precision + recall)
         logger.info(f"n_correct={n_correct_edges}, n_retained={len(retained_edges)}, n_gold={n_gold_edges}")
         logger.info(f"f1={f1}, recall={recall}")
