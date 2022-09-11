@@ -17,6 +17,8 @@ from tqdm import tqdm
 import pickle
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
+from sklearn.cluster import KMeans
+
 from special_partition.special_partition import cluster_linking_partition
 from collections import defaultdict
 import blink.biencoder.data_process_mult as data_process
@@ -531,6 +533,7 @@ def main(params):
     # Find the most similar entity and k-nn mentions for each mention query
     men_recall_knn = []
     men_cands = []
+    men_scores = []
     cui_sums = defaultdict(int)
     for m in mention_data:
         cui_sums[m['label_cuis'][0]] += 1
@@ -550,6 +553,7 @@ def main(params):
         men_cand_idxs, men_cand_scores = men_cand_idxs[filter_mask][:knn], men_cand_scores[filter_mask][:knn]
         assert len(men_cand_idxs) == knn
         men_cands.append(men_cand_idxs)
+        men_scores.append(men_cand_scores)
         # Calculate mention recall@k
         gold_cui = mention_data[idx]['label_cuis'][0]
         if cui_sums[gold_cui] > 1:
@@ -557,7 +561,45 @@ def main(params):
             recall_knn = sum(recall_hit) / min(cui_sums[gold_cui] - 1, knn)
             men_recall_knn.append(recall_knn)
     logger.info('Done')
-    # assert len(men_recall_knn) == len(nn_men_idxs)
+
+
+
+    # Compute optimal score threshold to use for pairwise similarity score metric
+    if params["compute_pairwise_acc_threshold"]:
+        logger.info("Computing optimal threshold for pairwise accuracy (F1)")
+        n_thresholds = params['n_thresholds']  # Default is 10
+        k_means = KMeans(n_clusters=n_thresholds, random_state=17)
+        thresholds = np.sort(
+            np.concatenate(([0], k_means.fit(men_cand_scores.reshape(-1, 1)).cluster_centers_.flatten())))
+        n_gold_edges = sum([cui_sums[cui] * (cui_sums[cui] - 1) / 2 for cui in cui_sums])
+        best_thresh, best_f1 = -float('inf'), -float('inf')
+        for thresh in thresholds:
+            logger.info(f"\nRunning with thresh={thresh}")
+            seen = set()
+            n_correct_edges = 0.
+            n_retained_edges = 0.
+            for idx in range(len(men_cands)):
+                gold_cui = mention_data[idx]['label_cuis'][0]
+                for nn_i, nn_score in enumerate(men_scores[idx]):
+                    if nn_score > thresh:
+                        # Valid edge
+                        nn_idx = men_cands[idx][nn_i]
+                        if (idx, nn_idx) in seen or (nn_idx, idx) in seen:
+                            continue
+                        seen.add((idx, nn_idx))
+                        n_retained_edges += 1
+                        nn_gold_cui = mention_data[nn_idx]['label_cuis'][0]
+                        if nn_gold_cui == gold_cui:
+                            n_correct_edges += 1
+            precision = n_correct_edges / n_retained_edges
+            recall = n_correct_edges / n_gold_edges
+            f1 = (2 * precision * recall) / (precision + recall)
+            if f1 > best_f1:
+                logger.info(f"New best F1={f1} @ thresh={thresh}")
+                best_f1 = f1
+                best_thresh = thresh
+        logger.info(f"\nBest F1 = {best_f1} @ threshold = {best_thresh}")
+        exit(0)
 
     # Pickle the graphs
     print(f"Saving top-{knn} candidates")

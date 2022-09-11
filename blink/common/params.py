@@ -524,6 +524,10 @@ class BlinkParser(argparse.ArgumentParser):
             type=str,
             help="Specific linkage function to use for dendrogram purity analysis.",
         )
+        parser.add_argument(
+            "--compute_pairwise_acc_threshold", action="store_true",
+            help="Whether to compute the optimal similarity threshold for pairwise mention coreference accuracy",
+        )
 
     def add_joint_train_args(self, args=None):
         """
