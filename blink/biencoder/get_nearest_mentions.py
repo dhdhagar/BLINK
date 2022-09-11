@@ -574,7 +574,8 @@ def main(params):
         n_gold_edges = sum([cui_sums[cui] * (cui_sums[cui] - 1) / 2 for cui in cui_sums])
         best_thresh, best_f1 = -float('inf'), -float('inf')
         for thresh in thresholds:
-            logger.info(f"\nRunning with thresh={thresh}")
+            print()
+            logger.info(f"Running with thresh={thresh}")
             seen = set()
             n_correct_edges = 0.
             n_retained_edges = 0.
@@ -594,11 +595,14 @@ def main(params):
             precision = n_correct_edges / n_retained_edges
             recall = n_correct_edges / n_gold_edges
             f1 = (2 * precision * recall) / (precision + recall)
+            logger.info(f"n_correct={n_correct_edges}, n_retained={n_retained_edges}, n_gold={n_gold_edges}")
+            logger.info(f"f1={f1}")
             if f1 > best_f1:
                 logger.info(f"New best F1={f1} @ thresh={thresh}")
                 best_f1 = f1
                 best_thresh = thresh
-        logger.info(f"\nBest F1 = {best_f1} @ threshold = {best_thresh}")
+        print("\n")
+        logger.info(f"Best F1 = {best_f1} @ threshold = {best_thresh}")
         exit(0)
 
     # Pickle the graphs
