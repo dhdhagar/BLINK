@@ -528,6 +528,10 @@ class BlinkParser(argparse.ArgumentParser):
             "--compute_pairwise_acc_threshold", action="store_true",
             help="Whether to compute the optimal similarity threshold for pairwise mention coreference accuracy",
         )
+        parser.add_argument(
+            "--gen_correlation_clustering_data", action="store_true",
+            help="Whether to use an exact threshold value and generate correlation clustering data",
+        )
 
     def add_joint_train_args(self, args=None):
         """

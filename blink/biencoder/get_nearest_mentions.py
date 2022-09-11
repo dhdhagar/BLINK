@@ -11,6 +11,8 @@ import json
 import math
 import time
 import torch
+import csv
+
 from torch.utils.data import (DataLoader, SequentialSampler)
 import numpy as np
 from tqdm import tqdm
@@ -589,7 +591,7 @@ def main(params):
                     for idx in range(len(men_cands_knn)):
                         gold_cui = mention_data[idx]['label_cuis'][0]
                         for nn_i, nn_score in enumerate(men_scores_knn[idx]):
-                            if nn_score > thresh + 2:
+                            if nn_score > thresh:
                                 # Valid edge
                                 nn_idx = men_cands_knn[idx][nn_i]
                                 if (idx, nn_idx) in seen or (nn_idx, idx) in seen:
@@ -614,7 +616,41 @@ def main(params):
                         best_n_thresh = n_thresholds
         print("\n")
         logger.info(f"Best F1 = {best_f1} @ threshold = {best_thresh}")
-        logger.info(f"Best knn = {best_knn} @ threshold = {best_n_thresh}")
+        logger.info(f"Best knn = {best_knn}, best n_threshold = {best_n_thresh}")
+        exit(0)
+
+    if params["gen_correlation_clustering_data"]:
+        # Take exact threshold
+        threshold = params["exact_threshold"]
+        logger.info(f"Dropping edges using threshold={threshold}")
+        # Drop edges below that threshold
+        retained_edges = []
+        n_dropped = 0
+        for idx in range(len(men_cands)):
+            # gold_cui = mention_data[idx]['label_cuis'][0]
+            for nn_i, nn_score in enumerate(men_scores[idx]):
+                if nn_score > threshold:
+                    # Valid edge
+                    nn_idx = men_cands[idx][nn_i]
+                    if (idx, nn_idx) in seen or (nn_idx, idx) in seen:
+                        continue
+                    seen.add((idx, nn_idx))
+                    retained_edges.append({
+                        "from": idx,
+                        "to": nn_idx,
+                        "weight": nn_score
+                    })
+                    # nn_gold_cui = mention_data[nn_idx]['label_cuis'][0]
+                else:
+                    n_dropped += 1
+        logger.info(f"Dropped {n_dropped} edges, retained {len(retained_edges)} edges")
+        # Generate tsv in the expected format and dump
+        with open(f'{output_path}/correlation_data.tsv', mode='w') as fh:
+            csv_writer = csv.writer(fh, delimiter='\t')
+            csv_writer.writerow([n_mentions, len(retained_edges)])
+            for edge in retained_edges:
+                csv_writer.writerow([edge["from"], edge["to"], edge["weight"], 0])
+        logger.info(f"Correlation data saved to: {output_path}/correlation_data.tsv")
         exit(0)
 
     # Pickle the graphs
