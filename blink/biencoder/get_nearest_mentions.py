@@ -624,6 +624,7 @@ def main(params):
         threshold = params["exact_threshold"]
         logger.info(f"Dropping edges using threshold={threshold}")
         # Drop edges below that threshold
+        seen = set()
         retained_edges = []
         n_dropped = 0
         for idx in range(len(men_cands)):
