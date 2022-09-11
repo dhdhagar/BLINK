@@ -582,7 +582,7 @@ def main(params):
                 best_thresh, best_knn, best_n_thresh = None, None, None
                 for thresh in thresholds:
                     print()
-                    logger.info(f"Running with thresh={thresh}")
+                    logger.info(f"Running with n_thresh={n_thresholds}, knn={_knn}, thresh={thresh}")
                     seen = set()
                     n_correct_edges = 0.
                     n_retained_edges = 0.
@@ -599,6 +599,8 @@ def main(params):
                                 nn_gold_cui = mention_data[nn_idx]['label_cuis'][0]
                                 if nn_gold_cui == gold_cui:
                                     n_correct_edges += 1
+                    if n_retained_edges == 0:
+                        continue
                     precision = n_correct_edges / n_retained_edges
                     recall = n_correct_edges / n_gold_edges
                     f1 = (2 * precision * recall) / (precision + recall)
