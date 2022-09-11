@@ -627,8 +627,10 @@ def main(params):
         seen = set()
         retained_edges = []
         n_dropped = 0
+        n_correct_edges = 0.
+        n_gold_edges = sum([cui_sums[cui] * (cui_sums[cui] - 1) / 2 for cui in cui_sums])
         for idx in range(len(men_cands)):
-            # gold_cui = mention_data[idx]['label_cuis'][0]
+            gold_cui = mention_data[idx]['label_cuis'][0]
             for nn_i, nn_score in enumerate(men_scores[idx]):
                 if nn_score > threshold:
                     # Valid edge
@@ -641,10 +643,18 @@ def main(params):
                         "to": nn_idx,
                         "weight": nn_score
                     })
-                    # nn_gold_cui = mention_data[nn_idx]['label_cuis'][0]
+                    nn_gold_cui = mention_data[nn_idx]['label_cuis'][0]
+                    if nn_gold_cui == gold_cui:
+                        n_correct_edges += 1
                 else:
                     n_dropped += 1
         logger.info(f"Dropped {n_dropped} edges, retained {len(retained_edges)} edges")
+        # Calculate F1 of positive edges
+        precision = n_correct_edges / len(retained_edges)
+        recall = n_correct_edges / n_gold_edges
+        f1 = (2 * precision * recall) / (precision + recall)
+        logger.info(f"n_correct={n_correct_edges}, n_retained={len(retained_edges)}, n_gold={n_gold_edges}")
+        logger.info(f"f1={f1}, recall={recall}")
         # Generate tsv in the expected format and dump
         with open(f'{output_path}/correlation_data.tsv', mode='w') as fh:
             csv_writer = csv.writer(fh, delimiter='\t')
