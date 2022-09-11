@@ -567,42 +567,52 @@ def main(params):
     # Compute optimal score threshold to use for pairwise similarity score metric
     if params["compute_pairwise_acc_threshold"]:
         logger.info("Computing optimal threshold for pairwise accuracy (F1)")
-        n_thresholds = params['n_thresholds']  # Default is 10
-        k_means = KMeans(n_clusters=n_thresholds, random_state=17)
-        thresholds = np.sort(
-            np.concatenate(([0], k_means.fit(np.array(men_scores).flatten().reshape(-1, 1)).cluster_centers_.flatten())))
-        n_gold_edges = sum([cui_sums[cui] * (cui_sums[cui] - 1) / 2 for cui in cui_sums])
-        best_thresh, best_f1 = -float('inf'), -float('inf')
-        for thresh in thresholds:
-            print()
-            logger.info(f"Running with thresh={thresh}")
-            seen = set()
-            n_correct_edges = 0.
-            n_retained_edges = 0.
-            for idx in range(len(men_cands)):
-                gold_cui = mention_data[idx]['label_cuis'][0]
-                for nn_i, nn_score in enumerate(men_scores[idx]):
-                    if nn_score > thresh + 2:
-                        # Valid edge
-                        nn_idx = men_cands[idx][nn_i]
-                        if (idx, nn_idx) in seen or (nn_idx, idx) in seen:
-                            continue
-                        seen.add((idx, nn_idx))
-                        n_retained_edges += 1
-                        nn_gold_cui = mention_data[nn_idx]['label_cuis'][0]
-                        if nn_gold_cui == gold_cui:
-                            n_correct_edges += 1
-            precision = n_correct_edges / n_retained_edges
-            recall = n_correct_edges / n_gold_edges
-            f1 = (2 * precision * recall) / (precision + recall)
-            logger.info(f"n_correct={n_correct_edges}, n_retained={n_retained_edges}, n_gold={n_gold_edges}")
-            logger.info(f"f1={f1}")
-            if f1 > best_f1:
-                logger.info(f"New best F1={f1} @ thresh={thresh}")
-                best_f1 = f1
-                best_thresh = thresh
+        threshold_range = [2**i for i in range(int(math.log(params['n_thresholds'], 2)) + 1)]
+        knn_range = [2**i for i in range(int(math.log(knn, 2)) + 1)]
+        for n_thresholds in threshold_range:
+            # n_thresholds = params['n_thresholds']  # Default is 10
+            k_means = KMeans(n_clusters=n_thresholds, random_state=17)
+            for _knn in knn_range:
+                men_scores_knn = [m[:_knn] for m in men_scores]
+                men_cands_knn = [m[:_knn] for m in men_cands]
+                thresholds = np.sort(
+                    np.concatenate(([0], k_means.fit(np.array(men_scores_knn).flatten().reshape(-1, 1)).cluster_centers_.flatten())))
+                n_gold_edges = sum([cui_sums[cui] * (cui_sums[cui] - 1) / 2 for cui in cui_sums])
+                best_f1 = -float('inf')
+                best_thresh, best_knn, best_n_thresh = None, None, None
+                for thresh in thresholds:
+                    print()
+                    logger.info(f"Running with thresh={thresh}")
+                    seen = set()
+                    n_correct_edges = 0.
+                    n_retained_edges = 0.
+                    for idx in range(len(men_cands_knn)):
+                        gold_cui = mention_data[idx]['label_cuis'][0]
+                        for nn_i, nn_score in enumerate(men_scores_knn[idx]):
+                            if nn_score > thresh + 2:
+                                # Valid edge
+                                nn_idx = men_cands_knn[idx][nn_i]
+                                if (idx, nn_idx) in seen or (nn_idx, idx) in seen:
+                                    continue
+                                seen.add((idx, nn_idx))
+                                n_retained_edges += 1
+                                nn_gold_cui = mention_data[nn_idx]['label_cuis'][0]
+                                if nn_gold_cui == gold_cui:
+                                    n_correct_edges += 1
+                    precision = n_correct_edges / n_retained_edges
+                    recall = n_correct_edges / n_gold_edges
+                    f1 = (2 * precision * recall) / (precision + recall)
+                    logger.info(f"n_correct={n_correct_edges}, n_retained={n_retained_edges}, n_gold={n_gold_edges}")
+                    logger.info(f"f1={f1}, recall={recall}")
+                    if f1 > best_f1:
+                        logger.info(f"New best F1={f1} @ thresh={thresh}")
+                        best_f1 = f1
+                        best_thresh = thresh
+                        best_knn = _knn
+                        best_n_thresh = n_thresholds
         print("\n")
         logger.info(f"Best F1 = {best_f1} @ threshold = {best_thresh}")
+        logger.info(f"Best knn = {best_knn} @ threshold = {best_n_thresh}")
         exit(0)
 
     # Pickle the graphs
