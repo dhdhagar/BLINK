@@ -532,6 +532,10 @@ class BlinkParser(argparse.ArgumentParser):
             "--gen_correlation_clustering_data", action="store_true",
             help="Whether to use an exact threshold value and generate correlation clustering data",
         )
+        parser.add_argument(
+            "--normalize_correlation_clustering_data", action="store_true",
+            help="Whether to subtract the threshold from the edge weights",
+        )
 
     def add_joint_train_args(self, args=None):
         """

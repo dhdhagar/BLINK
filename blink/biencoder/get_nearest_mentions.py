@@ -634,22 +634,40 @@ def main(params):
         for idx in range(len(men_cands)):
             gold_cui = mention_data[idx]['label_cuis'][0]
             for nn_i, nn_score in enumerate(men_scores[idx]):
-                if nn_score > threshold:
-                    # Valid edge
+                if not params["normalize_correlation_clustering_data"]:
+                    if nn_score > threshold:
+                        # Valid edge
+                        nn_idx = men_cands[idx][nn_i]
+                        if (idx, nn_idx) in seen or (nn_idx, idx) in seen:
+                            continue
+                        seen.add((idx, nn_idx))
+                        retained_edges.append({
+                            "from": idx,
+                            "to": nn_idx,
+                            "weight": nn_score
+                        })
+                        nn_gold_cui = mention_data[nn_idx]['label_cuis'][0]
+                        if nn_gold_cui == gold_cui:
+                            n_correct_edges += 1
+                    else:
+                        n_dropped += 1
+                else:
                     nn_idx = men_cands[idx][nn_i]
                     if (idx, nn_idx) in seen or (nn_idx, idx) in seen:
                         continue
                     seen.add((idx, nn_idx))
+                    norm_score = nn_score - threshold
+                    if norm_score == 0:
+                        n_dropped += 1
+                        continue
                     retained_edges.append({
                         "from": idx,
                         "to": nn_idx,
-                        "weight": nn_score
+                        "weight": norm_score
                     })
                     nn_gold_cui = mention_data[nn_idx]['label_cuis'][0]
-                    if nn_gold_cui == gold_cui:
+                    if norm_score > 0 and nn_gold_cui == gold_cui:
                         n_correct_edges += 1
-                else:
-                    n_dropped += 1
         logger.info(f"Dropped {n_dropped} edges, retained {len(retained_edges)} edges")
         # Calculate F1 of positive edges
         precision = n_correct_edges / len(retained_edges)
@@ -665,7 +683,8 @@ def main(params):
             csv_writer = csv.writer(fh, delimiter='\t')
             csv_writer.writerow([n_mentions, len(retained_edges)])
             for edge in retained_edges:
-                csv_writer.writerow([edge["from"], edge["to"], edge["weight"], 0])
+                csv_writer.writerow([edge["from"], edge["to"], edge["weight"] if edge["weight"] > 0 else 0,
+                                     -edge["weight"] if edge["weight"] < 0 else 0])
         logger.info(f"Correlation data saved to: {output_path}/correlation_data.tsv")
         exit(0)
 
