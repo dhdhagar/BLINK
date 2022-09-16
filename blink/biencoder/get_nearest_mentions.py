@@ -686,6 +686,10 @@ def main(params):
                 csv_writer.writerow([edge["from"], edge["to"], edge["weight"] if edge["weight"] > 0 else 0,
                                      -edge["weight"] if edge["weight"] < 0 else 0])
         logger.info(f"Correlation data saved to: {output_path}/correlation_data.tsv")
+        # Dump the gold entity label for each mention
+        mention_gold_cui_idxs = list(map(lambda x: x['label_idxs'][0], mention_data))
+        with open(f'{output_path}/correlation_data_men_labels.json', mode='w') as fh:
+            json.dump(mention_gold_cui_idxs, fh)
         exit(0)
 
     # Pickle the graphs
