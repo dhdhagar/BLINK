@@ -264,6 +264,13 @@ def read_data(split, params, logger):
     return samples, has_mult_labels
 
 
+def solve_gaussian(m1, m2, std1, std2):
+    a = 1 / (2 * std1 ** 2) - 1 / (2 * std2 ** 2)
+    b = m2 / (std2 ** 2) - m1 / (std1 ** 2)
+    c = m1 ** 2 / (2 * std1 ** 2) - m2 ** 2 / (2 * std2 ** 2) - np.log(std2 / std1)
+    return np.roots([a, b, c])
+
+
 def main(params):
     output_path = params["output_path"]
     if not os.path.exists(output_path):
@@ -690,6 +697,22 @@ def main(params):
         mention_gold_cui_idxs = list(map(lambda x: x['label_idxs'][0], mention_data))
         with open(f'{output_path}/correlation_data_men_labels.json', mode='w') as fh:
             json.dump(mention_gold_cui_idxs, fh)
+
+        # Calculate sample mean and variance of the gold within- and across- cluster edges
+        within_weights, across_weights = [], []
+        for i, edge in enumerate(retained_edges):
+            from_label = mention_gold_cui_idxs[edge['from']]
+            to_label = mention_gold_cui_idxs[edge['to']]
+            if from_label == to_label:
+                within_weights.append(edge['weight'])
+            else:
+                across_weights.append(edge['weight'])
+
+            m1, m2 = np.mean(across_weights), np.mean(within_weights)
+            std1, std2 = np.var(across_weights), np.var(within_weights)
+            intersect_wt = solve_gaussian(m1, m2, std1, std2)
+            logger.info(f"Intersection of the within- and across-edge weight distributions of the gold cluster" +
+                        f" = {intersect_wt}")
         exit(0)
 
     # Pickle the graphs
