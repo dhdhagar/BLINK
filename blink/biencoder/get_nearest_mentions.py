@@ -709,7 +709,7 @@ def main(params):
                 else:
                     across_weights.append(edge['weight'])
             m1, m2 = np.mean(across_weights), np.mean(within_weights)
-            std1, std2 = np.var(across_weights), np.var(within_weights)
+            std1, std2 = np.std(across_weights), np.std(within_weights)
             intersect_wt = solve_gaussian(m1, m2, std1, std2)
             logger.info(f"Intersection of the within- and across-edge weight distributions of the gold cluster" +
                         f" = {intersect_wt}")
