@@ -699,20 +699,21 @@ def main(params):
             json.dump(mention_gold_cui_idxs, fh)
 
         # Calculate sample mean and variance of the gold within- and across- cluster edges
-        within_weights, across_weights = [], []
-        for i, edge in enumerate(retained_edges):
-            from_label = mention_gold_cui_idxs[edge['from']]
-            to_label = mention_gold_cui_idxs[edge['to']]
-            if from_label == to_label:
-                within_weights.append(edge['weight'])
-            else:
-                across_weights.append(edge['weight'])
-
+        if params["compute_gold_intersection"]:
+            within_weights, across_weights = [], []
+            for i, edge in enumerate(retained_edges):
+                from_label = mention_gold_cui_idxs[edge['from']]
+                to_label = mention_gold_cui_idxs[edge['to']]
+                if from_label == to_label:
+                    within_weights.append(edge['weight'])
+                else:
+                    across_weights.append(edge['weight'])
             m1, m2 = np.mean(across_weights), np.mean(within_weights)
             std1, std2 = np.var(across_weights), np.var(within_weights)
             intersect_wt = solve_gaussian(m1, m2, std1, std2)
             logger.info(f"Intersection of the within- and across-edge weight distributions of the gold cluster" +
                         f" = {intersect_wt}")
+
         exit(0)
 
     # Pickle the graphs

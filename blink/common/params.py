@@ -536,6 +536,10 @@ class BlinkParser(argparse.ArgumentParser):
             "--normalize_correlation_clustering_data", action="store_true",
             help="Whether to subtract the threshold from the edge weights",
         )
+        parser.add_argument(
+            "--compute_gold_intersection", action="store_true",
+            help="Whether to find the intersection of the within- and across-edge weight distributions of the gold cluster",
+        )
 
     def add_joint_train_args(self, args=None):
         """
