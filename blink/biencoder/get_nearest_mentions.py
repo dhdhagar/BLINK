@@ -265,10 +265,18 @@ def read_data(split, params, logger):
 
 
 def solve_gaussian(m1, m2, std1, std2):
-    a = 1 / (2 * std1 ** 2) - 1 / (2 * std2 ** 2)
-    b = m2 / (std2 ** 2) - m1 / (std1 ** 2)
-    c = m1 ** 2 / (2 * std1 ** 2) - m2 ** 2 / (2 * std2 ** 2) - np.log(std2 / std1)
-    return np.roots([a, b, c])
+    # Below based on https://stackoverflow.com/a/22579904/2923106
+    # a = 1 / (2 * std1 ** 2) - 1 / (2 * std2 ** 2)
+    # b = m2 / (std2 ** 2) - m1 / (std1 ** 2)
+    # c = m1 ** 2 / (2 * std1 ** 2) - m2 ** 2 / (2 * std2 ** 2) - np.log(std2 / std1)
+    # return np.roots([a, b, c])
+
+    # Below based on https://stats.stackexchange.com/a/571886
+    minus_b = (m1 * std2 ** 2 - m2 * std1 ** 2)
+    root_b2_minus_4ac = std1 * std2 * np.sqrt((m1 - m2) ** 2 + (std2 ** 2 - std1 ** 2) * np.log(std2 ** 2 / std1 ** 2))
+    two_a = std2 ** 2 - std1 ** 2
+    roots = [(minus_b - root_b2_minus_4ac) / two_a, (minus_b + root_b2_minus_4ac) / two_a]
+    return roots
 
 
 def main(params):
