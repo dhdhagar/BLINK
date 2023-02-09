@@ -23,6 +23,7 @@ from blink.biencoder.biencoder import BiEncoderRanker
 
 OPTIM_SCHED_FNAME = "optim_sched.pth"
 
+
 def read_dataset(dataset_name, preprocessed_json_data_parent_folder, debug=False):
     file_name = "{}.jsonl".format(dataset_name)
     txt_file_path = os.path.join(preprocessed_json_data_parent_folder, file_name)
@@ -92,6 +93,10 @@ def accuracy(out, labels, return_bool_arr=False):
     return np.sum(outputs == labels)
 
 
+def top_candidates(out, k=32):
+    return np.argsort(-out, axis=1)[:, :k]
+
+
 def remove_module_from_state_dict(state_dict):
     new_state_dict = OrderedDict()
     for key, value in state_dict.items():
@@ -113,14 +118,11 @@ def save_model(model, tokenizer, output_dir, scheduler=None, optimizer=None):
     tokenizer.save_vocabulary(output_dir)
     if scheduler is not None and optimizer is not None:
         optimizer_scheduler_file = os.path.join(output_dir, OPTIM_SCHED_FNAME)
-        optim_sched = {
-            'optimizer': optimizer,
-            'scheduler': scheduler
-        }
+        optim_sched = {"optimizer": optimizer, "scheduler": scheduler}
         torch.save(optim_sched, optimizer_scheduler_file)
 
 
-def get_logger(output_dir=None, file_name='log'):
+def get_logger(output_dir=None, file_name="log"):
     if output_dir != None:
         os.makedirs(output_dir, exist_ok=True)
         logging.basicConfig(
@@ -142,7 +144,7 @@ def get_logger(output_dir=None, file_name='log'):
             handlers=[logging.StreamHandler(sys.stdout)],
         )
 
-    logger = logging.getLogger('Blink')
+    logger = logging.getLogger("Blink")
     logger.setLevel(10)
     return logger
 

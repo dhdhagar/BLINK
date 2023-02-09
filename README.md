@@ -51,6 +51,7 @@ If you use ArboEL in your work, please cite the following paper:
 - Build cluster-linking special_partition function (from Cython)
     ```bash
     cd blink/biencoder/special_partition; python setup.py build_ext --inplace
+    cd ../../crossencoder/special_partition; python setup.py build_ext --inplace
     ```
 - Our setup assumes GPU availability
   - The code for our paper was run using 2 NVIDIA Quadro RTX 8000
@@ -99,7 +100,7 @@ The following are example commands for **MedMentions**. For brevity, and to redu
 
 ### Arborescence
 ```bash
-python blink/biencoder/train_biencoder_mst.py --bert_model=models/biobert-base-cased-v1.1 --data_path=data/medmentions/processed --output_path=models/trained/medmentions_mst/pos_neg_loss/no_type --pickle_src_path=models/trained/medmentions --num_train_epochs=5 --train_batch_size=128 --gradient_accumulation_steps=4 --eval_interval=10000 --pos_neg_loss --force_exact_search --embed_batch_size=3500 --data_parallel
+PYTHONPATH="." python blink/biencoder/train_biencoder_mst.py --bert_model=models/biobert-base-cased-v1.1 --data_path=data/medmentions/processed --output_path=models/trained/medmentions_mst/pos_neg_loss/no_type --pickle_src_path=models/trained/medmentions --num_train_epochs=5 --train_batch_size=128 --gradient_accumulation_steps=4 --eval_interval=10000 --pos_neg_loss --force_exact_search --embed_batch_size=3500 --data_parallel
 ```
 
 ### k-NN negatives
@@ -130,7 +131,7 @@ We specify cross-encoder commands for the Arborescence dual-encoder only for bre
 ### (using Arborescence dual-encoder)
 ```bash
 # Generate dual-encoder candidates
-python blink/crossencoder/eval_cluster_linking.py --data_path=data/medmentions/processed --output_path=models/trained/medmentions/candidates/arbo --pickle_src_path=models/trained/medmentions --path_to_biencoder_model=models/trained/medmentions_mst/pos_neg_loss/no_type/epoch_best_5th/pytorch_model.bin --bert_model=models/biobert-base-cased-v1.1 --data_parallel --scoring_batch_size=64 --save_topk_result
+python blink/crossencoder/eval_cluster_linking.py --data_path=data/medmentions/processed --output_path=models/trained/medmentions/candidates/arbo --pickle_src_path=models/trained/medmentions --path_to_biencoder_model=models/trained/medmentions_mst/pos_neg_loss/no_type/pytorch_model.bin --bert_model=models/biobert-base-cased-v1.1 --data_parallel --scoring_batch_size=64 --save_topk_result
 
 # Run cross-encoder training
 python blink/crossencoder/original/train_cross.py --data_path=data/medmentions/processed --pickle_src_path=models/trained/medmentions --output_path=models/trained/medmentions/crossencoder/arbo --bert_model=models/biobert-base-cased-v1.1 --learning_rate=2e-05 --num_train_epochs=5 --train_batch_size=2 --eval_batch_size=2 --biencoder_indices_path=models/trained/medmentions/candidates/arbo --add_linear --skip_initial_eval --eval_interval=-1 --data_parallel
