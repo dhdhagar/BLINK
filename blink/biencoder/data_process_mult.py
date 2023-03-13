@@ -12,11 +12,12 @@ from tqdm import tqdm
 from torch.utils.data import TensorDataset
 from blink.biencoder.zeshel_utils import world_to_id
 from blink.common.params import ENT_START_TAG, ENT_END_TAG, ENT_TITLE_TAG
-from torch.utils.data import (DataLoader, SequentialSampler)
+from torch.utils.data import DataLoader, SequentialSampler
 import math
 import faiss
 
 from IPython import embed
+
 
 def select_field(data, key1, key2=None):
     if key2 is None:
@@ -72,9 +73,9 @@ def get_context_representation(
 
 
 def get_candidate_representation(
-    candidate_desc, 
-    tokenizer, 
-    max_seq_length, 
+    candidate_desc,
+    tokenizer,
+    max_seq_length,
     candidate_title=None,
     title_tag=ENT_TITLE_TAG,
 ):
@@ -84,7 +85,17 @@ def get_candidate_representation(
     if candidate_title is not None:
         title_tokens = tokenizer.tokenize(candidate_title)
         if len(title_tokens) <= len(cand_tokens):
-            cand_tokens = title_tokens + [title_tag] + cand_tokens[(0 if title_tokens != cand_tokens[:len(title_tokens)] else len(title_tokens)):] # Filter title from description
+            cand_tokens = (
+                title_tokens
+                + [title_tag]
+                + cand_tokens[
+                    (
+                        0
+                        if title_tokens != cand_tokens[: len(title_tokens)]
+                        else len(title_tokens)
+                    ) :
+                ]
+            )  # Filter title from description
         else:
             cand_tokens = title_tokens + [title_tag] + cand_tokens
 
@@ -115,8 +126,8 @@ def process_mention_data(
     context_key="context",
     label_key="label",
     multi_label_key=None,
-    title_key='label_title',
-    label_id_key='label_id',
+    title_key="label_title",
+    label_id_key="label_id",
     ent_start_token=ENT_START_TAG,
     ent_end_token=ENT_END_TAG,
     title_token=ENT_TITLE_TAG,
@@ -156,7 +167,7 @@ def process_mention_data(
         labels, record_labels, record_cuis = [sample], [], []
         if multi_label_key is not None:
             labels = sample[multi_label_key]
-        
+
         not_found_in_dict = False
         for l in labels:
             label = l[label_key]
@@ -166,7 +177,7 @@ def process_mention_data(
                 break
             record_labels.append(dict_cui_to_idx[label_idx])
             record_cuis.append(label_idx)
-        
+
         if not_found_in_dict:
             continue
 
@@ -175,9 +186,13 @@ def process_mention_data(
             "mention_name": sample["mention"],
             "context": context_tokens,
             "n_labels": len(record_labels),
-            "label_idxs": record_labels + [-1]*(knn - len(record_labels)), # knn-length array with the starting elements representing the ground truth, and -1 elsewhere
+            "label_idxs": record_labels
+            + [-1]
+            * (
+                knn - len(record_labels)
+            ),  # knn-length array with the starting elements representing the ground truth, and -1 elsewhere
             "label_cuis": record_cuis,
-            "type": sample["type"]
+            "type": sample["type"],
         }
 
         processed_samples.append(record)
@@ -192,19 +207,25 @@ def process_mention_data(
             for l in sample["label_idxs"]:
                 if l == -1:
                     break
-                logger.info(f"Label {l} tokens : " + " ".join(entity_dictionary[l]["tokens"]))
                 logger.info(
-                    f"Label {l} ids : " + " ".join([str(v) for v in entity_dictionary[l]["ids"]])
+                    f"Label {l} tokens : " + " ".join(entity_dictionary[l]["tokens"])
+                )
+                logger.info(
+                    f"Label {l} ids : "
+                    + " ".join([str(v) for v in entity_dictionary[l]["ids"]])
                 )
 
     context_vecs = torch.tensor(
-        select_field(processed_samples, "context", "ids"), dtype=torch.long,
+        select_field(processed_samples, "context", "ids"),
+        dtype=torch.long,
     )
     label_idxs = torch.tensor(
-        select_field(processed_samples, "label_idxs"), dtype=torch.long,
+        select_field(processed_samples, "label_idxs"),
+        dtype=torch.long,
     )
     n_labels = torch.tensor(
-        select_field(processed_samples, "n_labels"), dtype=torch.int,
+        select_field(processed_samples, "n_labels"),
+        dtype=torch.int,
     )
     mention_idx = torch.arange(len(n_labels), dtype=torch.long)
 
@@ -212,15 +233,17 @@ def process_mention_data(
 
     return processed_samples, entity_dictionary, tensor_data
 
+
 def compute_gold_clusters(mention_data):
     clusters = {}
     for men_idx, mention in enumerate(mention_data):
-        for i in range(mention['n_labels']):
-            label_idx = mention['label_idxs'][i]
+        for i in range(mention["n_labels"]):
+            label_idx = mention["label_idxs"][i]
             if label_idx not in clusters:
                 clusters[label_idx] = []
             clusters[label_idx].append(men_idx)
     return clusters
+
 
 def build_index(embeds, force_exact_search, probe_mult_factor=1):
     if type(embeds) is not np.ndarray:
@@ -228,11 +251,13 @@ def build_index(embeds, force_exact_search, probe_mult_factor=1):
             embeds = embeds.numpy()
         else:
             embeds = np.array(embeds)
-    
+
     # Build index
     d = embeds.shape[1]
     nembeds = embeds.shape[0]
-    if nembeds <= 10000 or force_exact_search:  # if the number of embeddings is small, don't approximate
+    if (
+        nembeds <= 10000 or force_exact_search
+    ):  # if the number of embeddings is small, don't approximate
         index = faiss.IndexFlatIP(d)
         index.add(embeds)
     else:
@@ -241,19 +266,28 @@ def build_index(embeds, force_exact_search, probe_mult_factor=1):
         # number of the quantized cells to probe
         nprobe = int(math.floor(math.sqrt(nlist) * probe_mult_factor))
         quantizer = faiss.IndexFlatIP(d)
-        index = faiss.IndexIVFFlat(
-            quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT
-        )
+        index = faiss.IndexIVFFlat(quantizer, d, nlist, faiss.METRIC_INNER_PRODUCT)
         index.train(embeds)
         index.add(embeds)
         index.nprobe = nprobe
     return index
 
-def embed_and_index(model, token_id_vecs, encoder_type, batch_size=768, n_gpu=1, only_embed=False, corpus=None, force_exact_search=False, probe_mult_factor=1):
+
+def embed_and_index(
+    model,
+    token_id_vecs,
+    encoder_type,
+    batch_size=768,
+    n_gpu=1,
+    only_embed=False,
+    corpus=None,
+    force_exact_search=False,
+    probe_mult_factor=1,
+):
     with torch.no_grad():
-        if encoder_type == 'context':
+        if encoder_type == "context":
             encoder = model.encode_context
-        elif encoder_type == 'candidate':
+        elif encoder_type == "candidate":
             encoder = model.encode_candidate
         else:
             raise ValueError("Invalid encoder_type: expected context or candidate")
@@ -267,42 +301,62 @@ def embed_and_index(model, token_id_vecs, encoder_type, batch_size=768, n_gpu=1,
         iter_ = tqdm(dataloader, desc="Embedding in batches")
         for step, batch in enumerate(iter_):
             batch_embeds = encoder(batch.cuda())
-            embeds = batch_embeds if embeds is None else np.concatenate((embeds, batch_embeds), axis=0)
+            embeds = (
+                batch_embeds
+                if embeds is None
+                else np.concatenate((embeds, batch_embeds), axis=0)
+            )
 
         if only_embed:
             return embeds
 
         if corpus is None:
             # When "use_types" is False
-            index = build_index(embeds, force_exact_search, probe_mult_factor=probe_mult_factor)
+            index = build_index(
+                embeds, force_exact_search, probe_mult_factor=probe_mult_factor
+            )
             return embeds, index
-        
+
         # Build type-specific search indexes
         search_indexes = {}
         corpus_idxs = {}
-        for i,e in enumerate(corpus):
-            ent_type = e['type']
+        for i, e in enumerate(corpus):
+            ent_type = e["type"]
             if ent_type not in corpus_idxs:
                 corpus_idxs[ent_type] = []
             corpus_idxs[ent_type].append(i)
         for ent_type in corpus_idxs:
-            search_indexes[ent_type] = build_index(embeds[corpus_idxs[ent_type]], force_exact_search, probe_mult_factor=probe_mult_factor)
+            search_indexes[ent_type] = build_index(
+                embeds[corpus_idxs[ent_type]],
+                force_exact_search,
+                probe_mult_factor=probe_mult_factor,
+            )
             corpus_idxs[ent_type] = np.array(corpus_idxs[ent_type])
         return embeds, search_indexes, corpus_idxs
 
-def get_index_from_embeds(embeds, corpus_idxs=None, force_exact_search=False, probe_mult_factor=1):
+
+def get_index_from_embeds(
+    embeds, corpus_idxs=None, force_exact_search=False, probe_mult_factor=1
+):
     if corpus_idxs is None:
-        index = build_index(embeds, force_exact_search, probe_mult_factor=probe_mult_factor)
+        index = build_index(
+            embeds, force_exact_search, probe_mult_factor=probe_mult_factor
+        )
         return index
     search_indexes = {}
     for ent_type in corpus_idxs:
-        search_indexes[ent_type] = build_index(embeds[corpus_idxs[ent_type]], force_exact_search, probe_mult_factor=probe_mult_factor)
+        search_indexes[ent_type] = build_index(
+            embeds[corpus_idxs[ent_type]],
+            force_exact_search,
+            probe_mult_factor=probe_mult_factor,
+        )
     return search_indexes
+
 
 def get_idxs_by_type(corpus):
     corpus_idxs = {}
-    for i,e in enumerate(corpus):
-        ent_type = e['type']
+    for i, e in enumerate(corpus):
+        ent_type = e["type"]
         if ent_type not in corpus_idxs:
             corpus_idxs[ent_type] = []
         corpus_idxs[ent_type].append(i)

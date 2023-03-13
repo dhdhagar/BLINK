@@ -1,0 +1,23 @@
+name: arboel_2
+channels:
+  - pytorch
+  - defaults
+dependencies:
+  - python=3.9
+  - cudatoolkit=11.3.1
+  - cython
+  - faiss-gpu=1.7.3
+  - ipython=8.6.0
+  - numpy-base=1.23.3
+  - pytorch=1.11
+  - scikit-learn
+  - scikit-learn-intelex
+  - scipy=1.9.3
+  - torchvision=0.12.0
+  - pip
+  - pip:
+    - boto3==1.26.6
+    - botocore==1.29.6
+    - pytorch-transformers==1.2.0
+    - sacremoses==0.0.53
+    - sentencepiece==0.1.97

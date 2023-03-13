@@ -47,35 +47,45 @@ def modify(context_input, candidate_input, max_seq_length):
     return torch.LongTensor(new_input)
 
 
-def evaluate(reranker, eval_dataloader, device, logger, context_length, silent=True, unfiltered_length=None,
-             mention_data=None, compute_macro_avg=False, store_failure_success=False):
+def evaluate(
+    reranker,
+    eval_dataloader,
+    device,
+    logger,
+    context_length,
+    silent=True,
+    unfiltered_length=None,
+    mention_data=None,
+    compute_macro_avg=False,
+    store_failure_success=False,
+):
+    eval_start_time = time.time()
     reranker.model.eval()
     if silent:
         iter_ = eval_dataloader
     else:
         iter_ = tqdm(eval_dataloader, desc="Evaluation")
 
-    results = {
-
-    }
+    results = {}
 
     eval_accuracy = 0.0
     nb_eval_examples = 0
     nb_eval_steps = 0
 
     if mention_data is not None:
-        processed_mention_data = mention_data['mention_data']
+        processed_mention_data = mention_data["mention_data"]
         n_mentions_per_type = collections.defaultdict(int)
         if compute_macro_avg:
             for men in processed_mention_data:
                 n_mentions_per_type[men["type"]] += 1
-        dictionary = mention_data['entity_dictionary']
-        stored_candidates = mention_data['stored_candidates']
+        dictionary = mention_data["entity_dictionary"]
+        stored_candidates = mention_data["stored_candidates"]
         if store_failure_success:
-            failsucc = {
-                'failure': [],
-                'success': []
-            }
+            failsucc = {"failure": [], "success": []}
+
+        # Keep track of candidates for each mention
+        predicted_candidates = {}
+
     n_evaluated_per_type = collections.defaultdict(int)
     n_hits_per_type = collections.defaultdict(int)
 
@@ -88,8 +98,27 @@ def evaluate(reranker, eval_dataloader, device, logger, context_length, silent=T
         logits = logits.detach().cpu().numpy()
         label_ids = label_input.cpu().numpy()
 
-        tmp_eval_hits, predicted = utils.accuracy(logits, label_ids, return_bool_arr=True)
+        tmp_eval_hits, predicted = utils.accuracy(
+            logits, label_ids, return_bool_arr=True
+        )
         tmp_eval_accuracy = np.sum(tmp_eval_hits)
+
+        # Code to store top-k candidates
+        k = 32
+        topk_results = utils.top_candidates(logits, k=k)
+        for i, m_idx in enumerate(mention_idxs):
+            m_idx = m_idx.item()
+            men_query = processed_mention_data[m_idx]
+            mention_id = men_query["mention_id"]
+            candidate_cuis = [
+                dictionary[stored_candidates["candidates"][m_idx][topk_results[i, j]]][
+                    "cui"
+                ]
+                for j in range(k)
+            ]
+            assert topk_results[i, 0] == predicted[i]
+
+            predicted_candidates[mention_id] = candidate_cuis
 
         eval_accuracy += tmp_eval_accuracy
 
@@ -98,7 +127,7 @@ def evaluate(reranker, eval_dataloader, device, logger, context_length, silent=T
 
         if compute_macro_avg:
             for i, m_idx in enumerate(mention_idxs):
-                type = processed_mention_data[m_idx]['type']
+                type = processed_mention_data[m_idx]["type"]
                 n_evaluated_per_type[type] += 1
                 is_hit = tmp_eval_hits[i]
                 n_hits_per_type[type] += is_hit
@@ -107,17 +136,31 @@ def evaluate(reranker, eval_dataloader, device, logger, context_length, silent=T
             for i, m_idx in enumerate(mention_idxs):
                 m_idx = m_idx.item()
                 men_query = processed_mention_data[m_idx]
-                dict_pred = dictionary[stored_candidates['candidates'][m_idx][predicted[i]]]
+                dict_pred = dictionary[
+                    stored_candidates["candidates"][m_idx][predicted[i]]
+                ]
                 report_obj = {
-                    'mention_id': men_query['mention_id'],
-                    'mention_name': men_query['mention_name'],
-                    'mention_gold_cui': '|'.join(men_query['label_cuis']),
-                    'mention_gold_cui_name': '|'.join(
-                        [dictionary[i]['title'] for i in men_query['label_idxs'][:men_query['n_labels']]]),
-                    'predicted_name': dict_pred['title'],
-                    'predicted_cui': dict_pred['cui']
+                    "mention_id": men_query["mention_id"],
+                    "mention_name": men_query["mention_name"],
+                    "mention_gold_cui": "|".join(men_query["label_cuis"]),
+                    "mention_gold_cui_name": "|".join(
+                        [
+                            dictionary[i]["title"]
+                            for i in men_query["label_idxs"][: men_query["n_labels"]]
+                        ]
+                    ),
+                    "predicted_name": dict_pred["title"],
+                    "predicted_cui": dict_pred["cui"],
                 }
-                failsucc['success' if tmp_eval_hits[i] else 'failure'].append(report_obj)
+                failsucc["success" if tmp_eval_hits[i] else "failure"].append(
+                    report_obj
+                )
+
+    eval_end_time = time.time()
+    total_time = eval_end_time - eval_start_time
+    # Store predicted candidates and evaluation time
+    results["predicted_candidates"] = predicted_candidates
+    results["runtime"] = total_time
 
     results["filtered_length"] = nb_eval_examples
     normalized_eval_accuracy = eval_accuracy / nb_eval_examples
@@ -128,15 +171,15 @@ def evaluate(reranker, eval_dataloader, device, logger, context_length, silent=T
     if compute_macro_avg:
         norm_macro, unnorm_macro = 0, 0
         for type in n_mentions_per_type:
-            norm_macro += n_hits_per_type[type]/n_evaluated_per_type[type]
-            unnorm_macro += n_hits_per_type[type]/n_mentions_per_type[type]
+            norm_macro += n_hits_per_type[type] / n_evaluated_per_type[type]
+            unnorm_macro += n_hits_per_type[type] / n_mentions_per_type[type]
         norm_macro /= len(n_evaluated_per_type)
         unnorm_macro /= len(n_mentions_per_type)
         results["normalized_macro_avg_acc"] = norm_macro
         results["unnormalized_macro_avg_acc"] = unnorm_macro
     if store_failure_success:
-        results['failure'] = failsucc['failure']
-        results['success'] = failsucc['success']
+        results["failure"] = failsucc["failure"]
+        results["success"] = failsucc["success"]
     if not store_failure_success:
         logger.info(json.dumps(results))
     return results
@@ -160,26 +203,33 @@ def get_scheduler(params, optimizer, len_train_data, logger):
     num_warmup_steps = int(num_train_steps * params["warmup_proportion"])
 
     scheduler = WarmupLinearSchedule(
-        optimizer, warmup_steps=num_warmup_steps, t_total=num_train_steps,
+        optimizer,
+        warmup_steps=num_warmup_steps,
+        t_total=num_train_steps,
     )
     logger.info(" Num optimization steps = %d" % num_train_steps)
     logger.info(" Num warmup steps = %d", num_warmup_steps)
     return scheduler
 
-def load_data(data_split,
-              bi_tokenizer,
-              max_context_length,
-              max_cand_length,
-              knn,
-              pickle_src_path,
-              params,
-              logger,
-              return_dict_only=False):
+
+def load_data(
+    data_split,
+    bi_tokenizer,
+    max_context_length,
+    max_cand_length,
+    knn,
+    pickle_src_path,
+    params,
+    logger,
+    return_dict_only=False,
+):
     entity_dictionary_loaded = False
-    entity_dictionary_pkl_path = os.path.join(pickle_src_path, 'entity_dictionary.pickle')
+    entity_dictionary_pkl_path = os.path.join(
+        pickle_src_path, "entity_dictionary.pickle"
+    )
     if os.path.isfile(entity_dictionary_pkl_path):
         print("Loading stored processed entity dictionary...")
-        with open(entity_dictionary_pkl_path, 'rb') as read_handle:
+        with open(entity_dictionary_pkl_path, "rb") as read_handle:
             entity_dictionary = pickle.load(read_handle)
         entity_dictionary_loaded = True
 
@@ -187,29 +237,44 @@ def load_data(data_split,
         return entity_dictionary
 
     # Load data
-    tensor_data_pkl_path = os.path.join(pickle_src_path, f'{data_split}_tensor_data.pickle')
-    processed_data_pkl_path = os.path.join(pickle_src_path, f'{data_split}_processed_data.pickle')
+    tensor_data_pkl_path = os.path.join(
+        pickle_src_path, f"{data_split}_tensor_data.pickle"
+    )
+    processed_data_pkl_path = os.path.join(
+        pickle_src_path, f"{data_split}_processed_data.pickle"
+    )
     if os.path.isfile(tensor_data_pkl_path) and os.path.isfile(processed_data_pkl_path):
         print("Loading stored processed data...")
-        with open(tensor_data_pkl_path, 'rb') as read_handle:
+        with open(tensor_data_pkl_path, "rb") as read_handle:
             tensor_data = pickle.load(read_handle)
-        with open(processed_data_pkl_path, 'rb') as read_handle:
+        with open(processed_data_pkl_path, "rb") as read_handle:
             processed_data = pickle.load(read_handle)
     else:
         data_samples = utils.read_dataset(data_split, params["data_path"])
         if not entity_dictionary_loaded:
-            with open(os.path.join(params["data_path"], 'dictionary.pickle'), 'rb') as read_handle:
+            with open(
+                os.path.join(params["data_path"], "dictionary.pickle"), "rb"
+            ) as read_handle:
                 entity_dictionary = pickle.load(read_handle)
 
         # Check if dataset has multiple ground-truth labels
         mult_labels = "labels" in data_samples[0].keys()
         # Filter samples without gold entities
         data_samples = list(
-            filter(lambda sample: (len(sample["labels"]) > 0) if mult_labels else (sample["label"] is not None),
-                   data_samples))
+            filter(
+                lambda sample: (len(sample["labels"]) > 0)
+                if mult_labels
+                else (sample["label"] is not None),
+                data_samples,
+            )
+        )
         logger.info("Read %d data samples." % len(data_samples))
 
-        processed_data, entity_dictionary, tensor_data = data_process.process_mention_data(
+        (
+            processed_data,
+            entity_dictionary,
+            tensor_data,
+        ) = data_process.process_mention_data(
             data_samples,
             entity_dictionary,
             bi_tokenizer,
@@ -221,68 +286,82 @@ def load_data(data_split,
             logger=logger,
             debug=params["debug"],
             knn=knn,
-            dictionary_processed=entity_dictionary_loaded
+            dictionary_processed=entity_dictionary_loaded,
         )
         print("Saving processed data...")
         if not entity_dictionary_loaded:
-            with open(entity_dictionary_pkl_path, 'wb') as write_handle:
-                pickle.dump(entity_dictionary, write_handle,
-                            protocol=pickle.HIGHEST_PROTOCOL)
-        with open(tensor_data_pkl_path, 'wb') as write_handle:
-            pickle.dump(tensor_data, write_handle,
-                        protocol=pickle.HIGHEST_PROTOCOL)
-        with open(processed_data_pkl_path, 'wb') as write_handle:
-            pickle.dump(processed_data, write_handle,
-                        protocol=pickle.HIGHEST_PROTOCOL)
+            with open(entity_dictionary_pkl_path, "wb") as write_handle:
+                pickle.dump(
+                    entity_dictionary, write_handle, protocol=pickle.HIGHEST_PROTOCOL
+                )
+        with open(tensor_data_pkl_path, "wb") as write_handle:
+            pickle.dump(tensor_data, write_handle, protocol=pickle.HIGHEST_PROTOCOL)
+        with open(processed_data_pkl_path, "wb") as write_handle:
+            pickle.dump(processed_data, write_handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     if return_dict_only:
         return entity_dictionary
     return entity_dictionary, tensor_data, processed_data
 
 
-def get_data_loader(data_split, tokenizer, context_length, candidate_length, max_seq_length, pickle_src_path,
-                    logger, inject_ground_truth=False, max_n=None, shuffle=True, return_data=False,
-                    custom_cand_set=None):
+def get_data_loader(
+    data_split,
+    tokenizer,
+    context_length,
+    candidate_length,
+    max_seq_length,
+    pickle_src_path,
+    logger,
+    inject_ground_truth=False,
+    max_n=None,
+    shuffle=True,
+    return_data=False,
+    custom_cand_set=None,
+):
     # Load the top-64 indices for each mention query and the ground truth label if it exists in the candidate set
     logger.info(f"Loading {data_split} data...")
     cand_name = data_split
     if custom_cand_set is not None:
         logger.info(f"Loading custom candidate set: {custom_cand_set}...")
         cand_name = custom_cand_set
-    fname = os.path.join(params["biencoder_indices_path"], f"candidates_{cand_name}_top64.t7")
+    fname = os.path.join(
+        params["biencoder_indices_path"], f"candidates_{cand_name}_top64.t7"
+    )
     stored_data = torch.load(fname)
-    entity_dictionary, tensor_data, processed_data = load_data(data_split,
-                                                               tokenizer,
-                                                               context_length,
-                                                               candidate_length,
-                                                               1,
-                                                               pickle_src_path,
-                                                               params,
-                                                               logger)
+    entity_dictionary, tensor_data, processed_data = load_data(
+        data_split,
+        tokenizer,
+        context_length,
+        candidate_length,
+        1,
+        pickle_src_path,
+        params,
+        logger,
+    )
     logger.info("Loaded")
-    dict_vecs = list(map(lambda x: x['ids'], entity_dictionary))
+    dict_vecs = list(map(lambda x: x["ids"], entity_dictionary))
 
-    mention_idxs = torch.tensor([i for i in range(len(stored_data['labels']))])
+    mention_idxs = torch.tensor([i for i in range(len(stored_data["labels"]))])
     candidate_input = []
-    keep_mask = [True] * len(stored_data['labels'])
-    for i in tqdm(range(len(stored_data['labels'])), desc="Processing"):
-        if stored_data['labels'][i] == -1:
+    keep_mask = [True] * len(stored_data["labels"])
+    for i in tqdm(range(len(stored_data["labels"])), desc="Processing"):
+        if stored_data["labels"][i] == -1:
             # If ground truth not in candidates, replace the last candidate with the ground truth
             if inject_ground_truth:
                 gold_idx = processed_data[i]["label_idxs"][0]
-                stored_data['labels'][i] = len(stored_data['candidates'][i]) - 1
-                stored_data['candidates'][i][-1] = gold_idx
+                stored_data["labels"][i] = len(stored_data["candidates"][i]) - 1
+                stored_data["candidates"][i][-1] = gold_idx
             else:
                 keep_mask[i] = False
                 continue
-        cands = list(map(lambda x: dict_vecs[x], stored_data['candidates'][i]))
+        cands = list(map(lambda x: dict_vecs[x], stored_data["candidates"][i]))
         candidate_input.append(cands)
     candidate_input = np.array(candidate_input)
     context_input = tensor_data[:][0][keep_mask]
-    label_input = torch.tensor(stored_data['labels'])[keep_mask]
+    label_input = torch.tensor(stored_data["labels"])[keep_mask]
     mention_idxs = mention_idxs[keep_mask]
 
-    n_no_label = len(stored_data['labels']) - np.sum(keep_mask)
+    n_no_label = len(stored_data["labels"]) - np.sum(keep_mask)
 
     if max_n is not None:
         context_input = context_input[:max_n]
@@ -301,12 +380,20 @@ def get_data_loader(data_split, tokenizer, context_length, candidate_length, max
     dataloader = DataLoader(
         tensor_data,
         sampler=sampler,
-        batch_size=params["train_batch_size" if data_split == 'train' else "eval_batch_size"]
+        batch_size=params[
+            "train_batch_size" if data_split == "train" else "eval_batch_size"
+        ],
     )
     if return_data:
-        return dataloader, n_no_label, {"entity_dictionary": entity_dictionary,
-                                        "mention_data": processed_data,
-                                        "stored_candidates": stored_data}
+        return (
+            dataloader,
+            n_no_label,
+            {
+                "entity_dictionary": entity_dictionary,
+                "mention_data": processed_data,
+                "stored_candidates": stored_data,
+            },
+        )
     return dataloader, n_no_label
 
 
@@ -350,11 +437,19 @@ def main(params):
     candidate_length = params["max_context_length"]
 
     if params["only_evaluate"]:
-        test_dataloader, n_test_skipped, data = get_data_loader("test", tokenizer, context_length, candidate_length,
-                                                                max_seq_length, pickle_src_path, logger,
-                                                                inject_ground_truth=params["inject_eval_ground_truth"],
-                                                                shuffle=False, return_data=True,
-                                                                custom_cand_set=params["custom_cand_set"])
+        test_dataloader, n_test_skipped, data = get_data_loader(
+            "test",
+            tokenizer,
+            context_length,
+            candidate_length,
+            max_seq_length,
+            pickle_src_path,
+            logger,
+            inject_ground_truth=params["inject_eval_ground_truth"],
+            shuffle=False,
+            return_data=True,
+            custom_cand_set=params["custom_cand_set"],
+        )
         logger.info("Evaluating the model on the test set")
         results = evaluate(
             reranker,
@@ -366,23 +461,37 @@ def main(params):
             unfiltered_length=len(data["mention_data"]),
             mention_data=data,
             compute_macro_avg=True,
-            store_failure_success=True
+            store_failure_success=True,
         )
-        results_path = os.path.join(model_output_path, 'results.json')
-        with open(results_path, 'w') as f:
+        results_path = os.path.join(model_output_path, "results.json")
+        with open(results_path, "w") as f:
             json.dump(results, f, indent=2)
             print(f"\nAnalysis saved at: {results_path}")
         exit()
 
-    train_dataloader, _, train_data = get_data_loader('train', tokenizer, context_length, candidate_length,
-                                                      max_seq_length, pickle_src_path, logger,
-                                                      inject_ground_truth=params["inject_train_ground_truth"],
-                                                      return_data=True)
+    train_dataloader, _, train_data = get_data_loader(
+        "train",
+        tokenizer,
+        context_length,
+        candidate_length,
+        max_seq_length,
+        pickle_src_path,
+        logger,
+        inject_ground_truth=params["inject_train_ground_truth"],
+        return_data=True,
+    )
 
-    valid_dataloader, n_valid_skipped = get_data_loader('valid', tokenizer, context_length, candidate_length,
-                                                        max_seq_length, pickle_src_path, logger,
-                                                        inject_ground_truth=params["inject_eval_ground_truth"],
-                                                        max_n=2048)
+    valid_dataloader, n_valid_skipped = get_data_loader(
+        "valid",
+        tokenizer,
+        context_length,
+        candidate_length,
+        max_seq_length,
+        pickle_src_path,
+        logger,
+        inject_ground_truth=params["inject_eval_ground_truth"],
+        # max_n=2048,
+    )
 
     if not params["skip_initial_eval"]:
         logger.info("Evaluating dev set on untrained model...")
@@ -408,7 +517,9 @@ def main(params):
     )
 
     optimizer = get_optimizer(model, params)
-    scheduler = get_scheduler(params, optimizer, len(train_data["mention_data"]), logger)
+    scheduler = get_scheduler(
+        params, optimizer, len(train_data["mention_data"]), logger
+    )
 
     model.train()
 
