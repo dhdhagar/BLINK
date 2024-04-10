@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 
-from setuptools import setup
+from setuptools import setup, find_packages
 
 with open("README_blink.md") as f:
     readme = f.read()
@@ -23,7 +23,12 @@ setup(
     ],
     long_description=readme,
     long_description_content_type="text/markdown",
-    setup_requires=["setuptools>=18.0",],
+    setup_requires=[
+        "setuptools>=18.0",
+    ],
+    packages=find_packages(
+        exclude=["img*", "examples*", "notebooks*", "zeshel*", "scripts*"]
+    ),
     install_requires=[
         "torch>=1.2.0",
         "pysolr>=3.8.1",
